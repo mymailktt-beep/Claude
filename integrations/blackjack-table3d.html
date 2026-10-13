@@ -15,13 +15,15 @@ const DEALER_URL='./dealer-model.js';                 // the dealer GLB, publish
 const TABLE_URL='./table-model.js', CHIPS_URL='./chips-model.js';   // the table, and the chips & cards models
 // The table model is scaled 33.2x to real size; its long straight dealer section is shortened to D so the
 // dealer stands close to the players, as at a real blackjack table.
-const TABLE_K=33.2, TABLE_D=0.22;
-const TABLE_Y=0.0289*TABLE_K, EDGE_Z=0.22, R=0.0301*TABLE_K, FELT_HW=0.0271*TABLE_K;   // felt height, arc centre, arc depth, half width (m)
-const CARD_S=1.9, CW=0.0635*CARD_S, CH=0.0889*CARD_S;   // cards a little larger than life so they read on a phone
-const CHIP_R=0.021*1.35, CHIP_H=0.0065*1.35;
-const DEALER_Z=EDGE_Z-TABLE_D-0.2;                       // he stands just behind the dealer's edge
-const SEAT_R=0.78;                                        // betting circles' distance from the arc centre
-const GLOBALS={SC:()=>SC,chipLabel:()=>chipLabel,MIN_BET:()=>MIN_BET,fmt:()=>fmt,reducedMotion:()=>reducedMotion,handValue:()=>handValue};
+// The table model is scaled to real height (KY) but narrower across (KXZ), and its long straight dealer section
+// is shortened to D, so the dealer can lean in and reach your spot, as in the reference video. Chairs keep full size.
+const TABLE_KY=33.2, TABLE_KXZ=25.5, TABLE_K=TABLE_KXZ, TABLE_D=0.12;
+const TABLE_Y=0.0289*TABLE_KY, EDGE_Z=0.22, R=0.0301*TABLE_KXZ, FELT_HW=0.0271*TABLE_KXZ;   // felt height, arc centre, arc depth, half width (m)
+const CARD_S=2.0, CW=0.0635*CARD_S, CH=0.0889*CARD_S;   // cards a little larger than life so they read on a phone
+const CHIP_R=0.021*1.1, CHIP_H=0.0065*1.1;
+const DEALER_Z=EDGE_Z-TABLE_D-0.09;                      // he stands against the dealer's edge of the table
+const SEAT_R=0.47;                                        // betting circles' distance from the arc centre
+const GLOBALS={addChip:()=>addChip,SC:()=>SC,chipLabel:()=>chipLabel,MIN_BET:()=>MIN_BET,fmt:()=>fmt,reducedMotion:()=>reducedMotion,handValue:()=>handValue};
 const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // the game's globals, if present
 
 (async()=>{
@@ -101,16 +103,16 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     };
     // the banner band
     const band=(r0,r1,span)=>{c.beginPath();c.arc(cx,cy,r1*PX,Math.PI/2-span,Math.PI/2+span);c.arc(cx,cy,r0*PX,Math.PI/2+span,Math.PI/2-span,true);c.closePath();};
-    band(0.52,0.62,.62);c.fillStyle='rgba(120,200,255,.28)';c.fill();c.lineWidth=5;c.strokeStyle='rgba(225,240,255,.75)';c.stroke();
-    arcText('BLACKJACK PAYS 3 TO 2',0.36,'600 60px Georgia, serif','#e8c25a','rgba(40,30,0,.35)');
-    arcText("Dealer must draw to 16, and stand on all 17's",0.45,'italic 40px Georgia, serif','#0e2c4f');
-    arcText('TIP  DEALER',0.57,'700 56px Georgia, serif','#f2cf5f','rgba(80,50,0,.45)');
+    band(0.27,0.335,.75);c.fillStyle='rgba(120,200,255,.28)';c.fill();c.lineWidth=5;c.strokeStyle='rgba(225,240,255,.75)';c.stroke();
+    arcText('BLACKJACK PAYS 3 TO 2',0.17,'600 58px Georgia, serif','#e8c25a','rgba(40,30,0,.35)');
+    arcText("Dealer must draw to 16, and stand on all 17's",0.222,'italic 34px Georgia, serif','#0e2c4f');
+    arcText('INSURANCE PAYS 2 TO 1',0.302,'700 44px Georgia, serif','#f2cf5f','rgba(80,50,0,.45)');
     // betting circles; the centre one is yours
-    [30,60,90,120,150].forEach(deg=>{const a=deg*Math.PI/180,x=cx+SEAT_R*PX*Math.cos(a),y=cy+SEAT_R*PX*Math.sin(a);
+    [34,62,90,118,146].forEach(deg=>{const a=deg*Math.PI/180,x=cx+SEAT_R*PX*Math.cos(a),y=cy+SEAT_R*PX*Math.sin(a);
       c.save();c.translate(x,y);
       if(deg===90){c.shadowColor='rgba(170,230,255,.95)';c.shadowBlur=26;c.lineWidth=10;c.strokeStyle='rgba(225,247,255,.95)';}
       else{c.lineWidth=6;c.strokeStyle='rgba(215,240,255,.55)';}
-      c.beginPath();c.ellipse(0,0,0.085*PX,0.085*PX,0,0,7);c.stroke();c.restore();});
+      c.beginPath();c.ellipse(0,0,0.07*PX,0.07*PX,0,0,7);c.stroke();c.restore();});
   }));
 
   // card art: the game's own face cards and card back are reused when the page has them
@@ -129,12 +131,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const faceCache={};
   const faceTex=(card)=>{const key=card.rank+card.suit;if(faceCache[key])return faceCache[key];
     const col=REDS[card.suit]?'#d0101c':'#0b0b0c',sym=SYM[card.suit];
-    const t=tex(canvas(TW,TH,(c,w,h)=>{
+    const t=tex(canvas(TW*2,TH*2,(c,W2,H2)=>{c.scale(2,2);const w=TW,h=TH;
       roundRect(c,2,2,w-4,h-4,22);c.fillStyle='#ffffff';c.fill();
       c.lineWidth=2;c.strokeStyle='rgba(0,0,0,.25)';c.stroke();
       c.fillStyle=col;c.textAlign='center';c.textBaseline='middle';
       const idx=(rot)=>{c.save();if(rot){c.translate(w,h);c.rotate(Math.PI);}
-        c.font=`700 ${card.rank==='10'?54:66}px Georgia, serif`;c.fillText(card.rank,36,44);c.font='56px Georgia, serif';c.fillText(sym,36,100);c.restore();};
+        c.font=`700 ${card.rank==='10'?60:76}px Arial, Helvetica, sans-serif`;c.fillText(card.rank,card.rank==='10'?40:36,48);c.font='62px Arial, Helvetica, sans-serif';c.fillText(sym,36,108);c.restore();};
       idx(false);idx(true);
       const art={J:artJ,Q:artQ,K:artK}[card.rank];
       if(art){c.save();roundRect(c,72,44,w-144,h-88,6);c.clip();c.drawImage(art,72,44,w-144,h-88);c.restore();
@@ -144,7 +146,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       else{c.font='120px Georgia, serif';c.fillText(sym,w/2,h/2);}
     }));
     return faceCache[key]=t;};
-  const backTex=tex(canvas(TW,TH,(c,w,h)=>{
+  const backTex=tex(canvas(TW*2,TH*2,(c,W2,H2)=>{c.scale(2,2);const w=TW,h=TH;
     roundRect(c,2,2,w-4,h-4,22);c.fillStyle='#f4f2ee';c.fill();
     c.save();roundRect(c,cardBackImg?2:14,cardBackImg?2:14,cardBackImg?w-4:w-28,cardBackImg?h-4:h-28,cardBackImg?22:14);c.clip();
     if(cardBackImg)c.drawImage(cardBackImg,0,0,w,h);
@@ -180,8 +182,8 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const floor=new THREE.Mesh(new THREE.PlaneGeometry(30,30),std({map:carpetTex,roughness:.95}));
   floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
 
-  scene.add(new THREE.HemisphereLight(0xdfe9ff,0x1a2235,1.0));
-  const key=new THREE.DirectionalLight(0xfff3e2,2.6);key.position.set(-0.8,4.2,2.2);key.castShadow=true;
+  scene.add(new THREE.HemisphereLight(0xf2f6ff,0x2a3348,1.7));
+  const key=new THREE.DirectionalLight(0xfff6ea,2.1);key.position.set(-0.6,4.2,1.8);key.castShadow=true;
   key.shadow.mapSize.set(2048,2048);Object.assign(key.shadow.camera,{left:-2.2,right:2.2,top:2.2,bottom:-2.2,near:1,far:9});key.shadow.bias=-0.0004;key.shadow.normalBias=0.01;
   key.target.position.set(0,TABLE_Y,0.6);scene.add(key,key.target);
   const fill=new THREE.DirectionalLight(0x9ab8ff,0.55);fill.position.set(2.5,2,-1.5);scene.add(fill);
@@ -198,9 +200,9 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   {
     const root=tableGltf.scene;root.updateMatrixWorld(true);
     // model units: +z is the dealer's end, z=0 the arc centre. Straight section 0..LR, squeezed by F.
-    const LR=0.0296,F=TABLE_D/(TABLE_K*LR);
+    const LR=0.0296,F=TABLE_D/(TABLE_KXZ*LR);
     const squeeze=z=>z<=0?z:(z<=LR?z*F:LR*F+(z-LR));
-    const holder=new THREE.Group();holder.scale.setScalar(TABLE_K);holder.rotation.y=Math.PI;holder.position.z=EDGE_Z;table.add(holder);
+    const holder=new THREE.Group();holder.scale.set(TABLE_KXZ,TABLE_KY,TABLE_KXZ);holder.rotation.y=Math.PI;holder.position.z=EDGE_Z;table.add(holder);
     const meshes=[];root.traverse(o=>{if(o.isMesh)meshes.push(o);});
     const dividers=[];
     for(const m of meshes){
@@ -211,6 +213,9 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       if(/Object_13\d/.test(m.name)){                            // chairs: keep those round the arc, not your own seat
         if(c.z>-0.004)continue;
         if(Math.abs(c.x)<0.012&&c.z<-0.035)continue;
+        // full-size chair, pulled in with the narrower table: its centre moves, its shape does not
+        const k=TABLE_KY/TABLE_KXZ,cx=c.x,cz=c.z;
+        geo.translate(-cx,0,-cz);geo.scale(k,1,k);geo.translate(cx*1.3,0,cz*1.3);
       }
       const p=geo.attributes.position;
       for(let i=0;i<p.count;i++)p.setZ(i,squeeze(p.getZ(i)));
@@ -218,12 +223,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       let material=chairWood;
       if(mat==='lambert12'){                                      // felt: map the printed felt canvas from above
         const uv=new Float32Array(p.count*2);
-        for(let i=0;i<p.count;i++){const wx=-p.getX(i)*TABLE_K,wz=EDGE_Z-p.getZ(i)*TABLE_K;
+        for(let i=0;i<p.count;i++){const wx=-p.getX(i)*TABLE_KXZ,wz=EDGE_Z-p.getZ(i)*TABLE_KXZ;
           uv[i*2]=(wx+FELT_HW)/(2*FELT_HW);uv[i*2+1]=1-(wz-(EDGE_Z-TABLE_D))/(R+TABLE_D);}
         geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));material=feltMat;
       }else if(mat==='lambert11'||mat==='lambert13'||mat==='lambert19'){
         const uv=new Float32Array(p.count*2);
-        for(let i=0;i<p.count;i++){uv[i*2]=p.getX(i)*TABLE_K*1.5+p.getY(i)*TABLE_K;uv[i*2+1]=p.getZ(i)*TABLE_K*1.5;}
+        for(let i=0;i<p.count;i++){uv[i*2]=p.getX(i)*TABLE_KXZ*1.5+p.getY(i)*TABLE_KY;uv[i*2+1]=p.getZ(i)*TABLE_KXZ*1.5;}
         geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));
         material=mat==='lambert11'?woodMat:railMat;
         if(/pCube(7|8|9|10|11|12|13)_/.test(m.name))dividers.push(c.x);
@@ -232,21 +237,21 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     }
     woodTex.repeat.set(1,1);leatherTex.repeat.set(1,1);
     // fill the dealer's chip tray: chips standing on edge in the slots between the dividers
-    const xs=dividers.map(x=>-x*TABLE_K).sort((a,b)=>a-b);
+    const xs=dividers.map(x=>-x*TABLE_KXZ).sort((a,b)=>a-b);
     const slots=[];for(let i=0;i+1<xs.length;i++)slots.push((xs[i]+xs[i+1])/2);
     if(xs.length){slots.unshift(xs[0]-(xs[1]-xs[0])/2);slots.push(xs[xs.length-1]+(xs[xs.length-1]-xs[xs.length-2])/2);}
-    const TRAY_Z0=EDGE_Z-squeeze(0.0193)*TABLE_K, TRAY_Z1=EDGE_Z-squeeze(0.0300)*TABLE_K;
+    const TRAY_Z0=EDGE_Z-squeeze(0.0193)*TABLE_KXZ, TRAY_Z1=EDGE_Z-squeeze(0.0300)*TABLE_KXZ;
     const order=[5,25,100,500];
     slots.forEach((x,i)=>{const v=order[i%4],n=Math.floor(Math.abs(TRAY_Z0-TRAY_Z1)/CHIP_H*0.92);
-      for(let k=0;k<n;k++){const ch=chipMesh(v);ch.rotation.x=Math.PI/2;ch.position.set(x,TABLE_Y-0.012+CHIP_R,TRAY_Z1+CHIP_H*(k+.6));table.add(ch);}});
+      for(let k=0;k<n;k++){const ch=chipMesh(v);ch.rotation.x=Math.PI/2;ch.position.set(x,TABLE_Y-0.01+CHIP_R,TRAY_Z1+CHIP_H*(k+.6));table.add(ch);}});
     window.__w3dTray={z0:TRAY_Z0,z1:TRAY_Z1,slots};
   }
   // the shoe (viewer's right) and the discard holder (viewer's left)
   const acrylic=std({color:0xdfe9f2,transparent:true,opacity:.22,roughness:.05,metalness:.1,depthWrite:false});
-  const SHOE_POS=new THREE.Vector3(0.6,TABLE_Y,EDGE_Z-0.04), DISCARD_POS=new THREE.Vector3(-0.6,TABLE_Y,EDGE_Z-0.06);
+  const SHOE_POS=new THREE.Vector3(0.5,TABLE_Y,EDGE_Z-0.01), DISCARD_POS=new THREE.Vector3(-0.5,TABLE_Y,EDGE_Z-0.03);
   const shoeMouth=new THREE.Vector3();
   { const shoe=new THREE.Group();shoe.position.copy(SHOE_POS);shoe.rotation.y=0.75;table.add(shoe);
-    const box=new THREE.Mesh(new THREE.BoxGeometry(0.13,0.11,0.24),acrylic);box.position.set(0,0.055,0);shoe.add(box);
+    const box=new THREE.Mesh(new THREE.BoxGeometry(0.11,0.1,0.2),acrylic);box.position.set(0,0.055,0);shoe.add(box);
     const deck=new THREE.Mesh(new THREE.BoxGeometry(CW*.96,0.085,0.2),[std({color:0xf2efe6}),std({color:0xf2efe6}),std({color:0xf2efe6}),std({color:0xf2efe6}),std({map:backTex}),std({color:0xe8e4da})]);
     deck.position.set(0,0.05,-0.01);deck.rotation.x=-0.25;deck.castShadow=true;shoe.add(deck);
     const cut=new THREE.Mesh(new THREE.BoxGeometry(CW*.98,0.09,0.004),std({color:0xf2d23c}));cut.position.set(0,0.055,-0.09);shoe.add(cut);
@@ -284,16 +289,20 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const POSE=[];body.traverse(o=>{if(o.isBone)POSE.push([o,o.quaternion.clone(),o.position.clone()]);});
   const resetPose=()=>{for(const[b,q,p]of POSE){b.quaternion.copy(q);b.position.copy(p);}body.updateMatrixWorld(true);};
   const bone=n=>body.getObjectByName(n);
-  const headB=bone('Head_08'),neckB=bone('Neck_05'),chestB=bone('Spine2_04');
+  const headB=bone('Head_08'),neckB=bone('Neck_05'),chestB=bone('Spine2_04'),spineB=bone('Spine_02'),spine1B=bone('Spine1_03');
+  const fingerBones=(side,f)=>[1,2,3].map(k=>{let b=null;body.traverse(o=>{if(!b&&o.isBone&&o.name.startsWith(side+'Hand'+f+k+'_'))b=o;});return b;}).filter(Boolean);
   const wp=(o,v=new THREE.Vector3())=>o.getWorldPosition(v);
   const NAMES={L:['LeftArm_013','LeftForeArm_014','LeftHand_017','LeftHandMiddle1_026','LeftHandIndex1_022','LeftHandPinky1_034'],
                R:['RightArm_039','RightForeArm_040','RightHand_043','RightHandMiddle1_00','RightHandIndex1_048','RightHandPinky1_059']};
   const arm={};
   for(const s of['L','R']){const[u,f,h,m,i,p]=NAMES[s].map(bone);
+    const P=s==='L'?'Left':'Right';
     arm[s]={side:s==='L'?1:-1,u,f,h,m,i,p,target:new THREE.Vector3(),dir:new THREE.Vector3(0,0,1),wrist:new THREE.Vector3(),
-      L1:wp(u).distanceTo(wp(f)),L2:wp(f).distanceTo(wp(h)),HL:wp(h).distanceTo(wp(m))+0.05};}
-  // resting: fingertips on the felt either side of the chip rack
-  const REST={L:new THREE.Vector3(0.46,TABLE_Y+0.012,EDGE_Z-0.12),R:new THREE.Vector3(-0.46,TABLE_Y+0.012,EDGE_Z-0.12)};
+      L1:wp(u).distanceTo(wp(f)),L2:wp(f).distanceTo(wp(h)),HL:wp(h).distanceTo(wp(m))+0.05,
+      fingers:{index:fingerBones(P,'Index'),thumb:fingerBones(P,'Thumb'),others:['Middle','Ring','Pinky'].map(n=>fingerBones(P,n))},
+      shoulder0:wp(u),busy:0,point:0,down:0};}
+  // resting: fingertips on the felt either side of the chip tray
+  const REST={L:new THREE.Vector3(0.3,TABLE_Y+0.012,EDGE_Z-0.02),R:new THREE.Vector3(-0.3,TABLE_Y+0.012,EDGE_Z-0.02)};
   for(const s of['R','L'])arm[s].target.copy(REST[s]);
   const _q=new THREE.Quaternion(),_qa=new THREE.Quaternion(),_qb=new THREE.Quaternion(),_pq=new THREE.Quaternion(),_a=new THREE.Vector3(),_b=new THREE.Vector3();
   const UP=new THREE.Vector3(0,1,0),DOWN=new THREE.Vector3(0,-1,0);
@@ -316,7 +325,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // so the wrist turns smoothly instead of whipping round when the hand changes direction
     const S0=wp(a.u);
     const hd=new THREE.Vector3(a.target.x-S0.x,0,a.target.z-S0.z);
-    if(hd.lengthSq()<1e-4)hd.set(0,0,1);hd.normalize();hd.lerp(new THREE.Vector3(0,0,1),0.35*(1-(a.supinate||0))).normalize();hd.y=-0.36+0.38*(a.supinate||0);hd.normalize();
+    if(hd.lengthSq()<1e-4)hd.set(0,0,1);hd.normalize();hd.lerp(new THREE.Vector3(0,0,1),0.35).normalize();hd.y=-0.36-2.3*a.down;hd.normalize();   // pointing: the hand tips down so the index finger points at the cards
     const W=a.target.clone().addScaledVector(hd,-a.HL).add(new THREE.Vector3(0,0.015,0));const dirSW=W.clone().sub(S0);let d=dirSW.length();dirSW.normalize();
     const reach=(a.L1+a.L2)*0.995;if(d>reach){W.copy(S0).addScaledVector(dirSW,reach);d=reach;}
     d=Math.max(d,Math.abs(a.L1-a.L2)+0.02);
@@ -328,12 +337,42 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     aimBone(a.h,a.m,hd);
     // turn the palm to face the felt: half of the twist in the forearm, the rest in the wrist
     let p=palmNormal(a);const fa=wp(a.h).sub(wp(a.f)).normalize();
-    const sup=a.supinate||0,want=f=>sup>0?DOWN.clone().applyAxisAngle(f,-a.side*Math.PI*0.9*sup):DOWN;
-    rollBone(a.f,fa,p.n,want(fa),0.5);
-    p=palmNormal(a);rollBone(a.h,p.f,p.n,want(p.f),1);
+    rollBone(a.f,fa,p.n,DOWN,0.5);
+    p=palmNormal(a);rollBone(a.h,p.f,p.n,DOWN,1);
+    // pointing: the index finger stays straight, the other fingers curl into the palm
+    if(a.point>0.01){p=palmNormal(a);const axis=wp(a.i).sub(wp(a.p)).normalize();let lastBend=null;
+      for(const chain of a.fingers.others){
+        // curl the way this finger already bends in his relaxed pose (towards the palm)
+        let bend=p.n.clone();
+        if(chain.length>2){const d1=wp(chain[1]).sub(wp(chain[0])).normalize(),d2=wp(chain[2]).sub(wp(chain[1])).normalize(),b=d2.sub(d1);if(b.length()>0.03)bend=b.normalize();}
+        chain.forEach((b,k)=>curl(b,chain[k+1]||null,axis,bend,[1.0,1.25,0.9][k]*a.point));
+        lastBend=bend;}
+      // tuck the thumb in across the folded fingers
+      const th=a.fingers.thumb;
+      if(th.length>1&&lastBend){const td=wp(th[1]).sub(wp(th[0])).normalize(),tax=new THREE.Vector3().crossVectors(td,lastBend).normalize();
+        th.forEach((b,k)=>curl(b,th[k+1]||null,tax,lastBend,[0.55,0.7,0.5][k]*a.point));}
+    }
     a.wrist.copy(wp(a.h));
   }
-  const gripPoint=(a,out)=>{const m=wp(a.m),h=wp(a.h);return out.copy(m).addScaledVector(m.sub(h).normalize(),0.035).add(new THREE.Vector3(0,-0.016,0));};
+  function curl(b,child,axis,palmN,ang){                  // bend a finger joint towards the palm
+    const tip0=child?wp(child):wp(b).add(wp(b).sub(wp(b.parent)));
+    b.getWorldQuaternion(_qb);setWorldQ(b,_qb.clone().premultiply(_qa.setFromAxisAngle(axis,ang)));
+    const tip1=child?wp(child):tip0;
+    if(child&&tip1.sub(tip0).dot(palmN)<0)setWorldQ(b,_qb.premultiply(_qa.setFromAxisAngle(axis,-ang)));
+  }
+  // lean in from the hips when a hand must reach far across the felt
+  let lean=0;
+  function leanTowards(dt){
+    let want=0,dir=new THREE.Vector3(0,0,1);
+    for(const a of[arm.L,arm.R]){const d=new THREE.Vector3(a.target.x-a.shoulder0.x,0,a.target.z-a.shoulder0.z);const need=d.length()-0.36;
+      if(need>want){want=need;dir=d.normalize();}}
+    want=Math.min(0.7,Math.max(0,want)*1.45);
+    lean+=(want-lean)*(1-Math.exp(-dt*5));
+    if(lean<0.002)return;
+    const axis=new THREE.Vector3().crossVectors(UP,dir).normalize();
+    for(const[b,f]of[[spineB,0.55],[spine1B,0.3],[chestB,0.15]]){b.getWorldQuaternion(_qb);setWorldQ(b,_qb.premultiply(_qa.setFromAxisAngle(axis,lean*f)));}
+  }
+  const gripPoint=(a,out)=>{const m=wp(a.m),h=wp(a.h);return out.copy(m).addScaledVector(m.sub(h).normalize(),0.03).add(new THREE.Vector3(0,-0.014,0));};
   // head: looks at a point; a nod when a hand is settled; a little breathing in the chest
   let lookYaw=0,lookPitch=0,nodT=-1,pointBlend=0;
   function turnHead(target,dt,now){
@@ -342,7 +381,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       ty=Math.max(-.7,Math.min(.7,Math.atan2(l.x-hp.x,l.z-hp.z)));tp=Math.max(0,Math.min(.75,Math.atan2(hp.y-l.y,Math.hypot(l.x-hp.x,l.z-hp.z))-0.35));}
     const k=1-Math.exp(-dt*6);lookYaw+=(ty-lookYaw)*k;lookPitch+=(tp-lookPitch)*k;
     let nod=0;if(nodT>=0){const t=(now-nodT)/1000;if(t>1.2)nodT=-1;else nod=Math.sin(Math.PI*Math.min(1,t/1.2))*0.35;}
-    chestB.getWorldQuaternion(_qb);setWorldQ(chestB,_qb.premultiply(_qa.setFromAxisAngle(new THREE.Vector3(1,0,0),Math.sin(now/1300)*0.012+0.16*pointBlend)));   // breathing, and a lean towards you on your turn
+    chestB.getWorldQuaternion(_qb);setWorldQ(chestB,_qb.premultiply(_qa.setFromAxisAngle(new THREE.Vector3(1,0,0),Math.sin(now/1300)*0.012)));   // breathing
     neckB.getWorldQuaternion(_qb);setWorldQ(neckB,_qb.premultiply(_qa.setFromEuler(new THREE.Euler((lookPitch+nod)*0.4,lookYaw*0.4,0,'YXZ'))));
     headB.getWorldQuaternion(_qb);setWorldQ(headB,_qb.premultiply(_qa.setFromEuler(new THREE.Euler((lookPitch+nod)*0.6,lookYaw*0.6,0,'YXZ'))));
   }
@@ -351,6 +390,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const tweens=new Set();
   const reduced=()=>(g('reducedMotion')?g('reducedMotion')():false);
   const ease=k=>k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2, easeOut=k=>1-Math.pow(1-k,3);
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const tween=(ms,fn,e=ease)=>new Promise(res=>{if(reduced()||ms<=0){fn(1);res();return;}tweens.add({t0:performance.now(),ms,fn,e,res});});
   // move a hand along a shallow arc, turning it gradually towards its new direction
   const moveHand=(a,to,ms,dir,lift=0.04)=>{const from=a.target.clone(),d0=a.dir.clone(),d1=dir?dir.clone().normalize():d0.clone();
@@ -358,30 +398,31 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
 
   /* ---------- cards ---------- */
   const cardGeo=new THREE.PlaneGeometry(CW,CH);
-  const backMat=new THREE.MeshStandardMaterial({map:backTex,emissive:0xffffff,emissiveMap:backTex,emissiveIntensity:.35,roughness:.6,alphaTest:.5,transparent:false});
+  const backMat=new THREE.MeshBasicMaterial({map:backTex,alphaTest:.5,toneMapped:false});
   backTex.premultiplyAlpha=false;
   function makeCard(card){
     const grp=new THREE.Group(),flip=new THREE.Group();grp.add(flip);flip.rotation.x=-Math.PI/2;
-    const ft=faceTex(card);const front=new THREE.Mesh(cardGeo,new THREE.MeshStandardMaterial({map:ft,emissive:0xffffff,emissiveMap:ft,emissiveIntensity:.55,roughness:.7,alphaTest:.5}));
+    const ft=faceTex(card);const front=new THREE.Mesh(cardGeo,new THREE.MeshBasicMaterial({map:ft,alphaTest:.5,toneMapped:false}));
     const back=new THREE.Mesh(cardGeo,backMat);back.rotation.y=Math.PI;
-    front.castShadow=back.castShadow=true;front.receiveShadow=back.receiveShadow=true;
+    front.castShadow=back.castShadow=true;
     flip.add(front,back);flip.rotation.y=Math.PI;   // starts face down
-    grp.userData={card,flip,faceUp:false};scene.add(grp);return grp;
+    grp.userData={card,flip,faceUp:false,held:null};scene.add(grp);return grp;
   }
   const setFace=(m,up,ms)=>{if(m.userData.faceUp===up)return Promise.resolve();m.userData.faceUp=up;const from=m.userData.flip.rotation.y,to=up?0:Math.PI;
     return tween(ms,k=>{m.userData.flip.rotation.y=from+(to-from)*k;m.userData.flip.position.y=Math.sin(Math.PI*k)*CW*.5;});};
   let cardSeq=0;const meshes=new Map();   // key -> mesh
   const keyOf=(c)=>{if(c.__w3d==null)Object.defineProperty(c,'__w3d',{value:++cardSeq,enumerable:false,writable:true});return c.__w3d;};
-  function handSpot(i,n){const a=Math.PI/2-((n-1)/2-i)*0.27;return arcPt(SEAT_R-0.15,a,TABLE_Y);}
-  function chipSpot(i,n){const a=Math.PI/2-((n-1)/2-i)*0.27;return arcPt(SEAT_R,a,TABLE_Y);}
+  const FAN=CW*0.32;                                      // each card shows a strip of the one under it
+  function handSpot(i,n){const a=Math.PI/2-((n-1)/2-i)*0.36;return arcPt(SEAT_R-0.115,a,TABLE_Y);}
+  function chipSpot(i,n){const a=Math.PI/2-((n-1)/2-i)*0.36;return arcPt(SEAT_R,a,TABLE_Y);}
   function layout(){
     // where every visible card should be, from the game state
     const out=[];
     const dc=(S.dealer&&S.dealer.cards)||[];
-    dc.forEach((c,j)=>out.push({card:c,pos:new THREE.Vector3((j-(dc.length-1)/2)*CW*0.62,TABLE_Y+0.002+j*0.0006,EDGE_Z+0.17),yaw:0,up:!(j===1&&S.dealer.hole),dealer:true}));
+    dc.forEach((c,j)=>out.push({card:c,pos:new THREE.Vector3((j-(dc.length-1)/2)*FAN*1.6,TABLE_Y+0.002+j*0.0006,EDGE_Z+0.08),yaw:0,up:!(j===1&&S.dealer.hole),dealer:true}));
     const hs=S.hands||[];
-    hs.forEach((h,i)=>{const sp=handSpot(i,hs.length),yaw=(Math.PI/2-Math.atan2(sp.z-EDGE_Z,sp.x))*1;
-      h.cards.forEach((c,j)=>{const off=new THREE.Vector3(0.026*j,0,-0.038*j).applyAxisAngle(UP,yaw);
+    hs.forEach((h,i)=>{const sp=handSpot(i,hs.length),yaw=(Math.PI/2-Math.atan2(sp.z-EDGE_Z,sp.x))*1,n=h.cards.length;
+      h.cards.forEach((c,j)=>{const off=new THREE.Vector3((j-(n-1)/2)*FAN,0,0).applyAxisAngle(UP,yaw);
         out.push({card:c,pos:sp.clone().add(off).setY(TABLE_Y+0.002+j*0.0006),yaw:yaw+(h.doubled&&j===2?Math.PI/2:0),up:true,hand:i});});});
     return out;
   }
@@ -389,29 +430,49 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   async function runDeals(){
     if(dealing)return;dealing=true;
     while(dealQueue.length){
-      const job=dealQueue.shift(),fast=dealQueue.length>2?0.8:1,a=arm.L,m=job.mesh;   // an unhurried pace; only a long queue speeds him up a little
+      const job=dealQueue.shift(),fast=dealQueue.length>2?0.8:1,a=arm.L,m=job.mesh;a.busy++;   // an unhurried pace; only a long queue speeds him up a little
+      while(collecting)await sleep(40);
       const toShoe=new THREE.Vector3().subVectors(shoeMouth,a.wrist).setY(0).normalize();
-      await moveHand(a,shoeMouth.clone().add(new THREE.Vector3(0,0.03,0)),380*fast,toShoe,0.05);
-      m.visible=true;m.userData.held=true;m.rotation.y=0.75;
+      await moveHand(a,shoeMouth.clone().add(new THREE.Vector3(0,0.03,0)),300*fast,toShoe,0.05);
+      m.visible=true;m.userData.held=a;m.rotation.y=0.75;
       const dir=new THREE.Vector3().subVectors(job.pos,shoeMouth).setY(0).normalize();
-      await moveHand(a,job.pos.clone().add(new THREE.Vector3(0,0.025,0)),520*fast,dir,0.04);
-      m.userData.held=false;
+      await moveHand(a,job.pos.clone().add(new THREE.Vector3(0,0.025,0)),460*fast,dir,0.04);
+      m.userData.held=null;
       const from=m.position.clone(),yaw0=m.rotation.y;
       moveHand(a,REST.L,560*fast,new THREE.Vector3(0,0,1),0.03);
-      const slide=tween(340*fast,k=>{m.position.lerpVectors(from,job.pos,k);m.rotation.y=yaw0+(job.yaw-yaw0)*k;},easeOut);
+      const slide=tween(220*fast,k=>{m.position.lerpVectors(from,job.pos,k);m.rotation.y=yaw0+(job.yaw-yaw0)*k;},easeOut);
       const turn=job.up?setFace(m,true,340*fast):Promise.resolve();
       await Promise.all([slide,turn]);
-      m.userData.placed=true;m.userData.target=job.pos.clone();m.userData.yaw=job.yaw;
+      m.userData.placed=true;m.userData.target=job.pos.clone();m.userData.yaw=job.yaw;a.busy--;
     }
     dealing=false;sync();
   }
   let discardCount=0;
+  const collectJobs=[];let collecting=false;
+  async function runCollect(){
+    if(collecting)return;collecting=true;
+    while(collectJobs.length){
+      const cards=collectJobs.shift(),a=arm.L;
+      while(dealing)await sleep(40);
+      a.busy++;
+      const c=new THREE.Vector3();cards.forEach(m=>c.add(m.position));c.divideScalar(cards.length);
+      cards.forEach(m=>setFace(m,false,260));
+      await moveHand(a,c.clone().setY(TABLE_Y+0.02),440,null,0.05);
+      cards.forEach((m,i)=>{m.userData.held=a;m.userData.heldOff=i*0.0007;});
+      await moveHand(a,DISCARD_POS.clone().add(new THREE.Vector3(0,0.06,0)),560,null,0.07);
+      for(const m of cards){scene.remove(m);meshes.delete(m.userData.key);}
+      discardCount+=cards.length;discardPile.visible=true;discardPile.scale.y=Math.min(90,discardCount*0.5);discardPile.position.y=discardPile.scale.y*0.0005;
+      await moveHand(a,REST.L,460,null,0.03);
+      a.busy--;
+    }
+    collecting=false;
+  }
   function sync(){
     const want=layout(),seen=new Set();
     for(const w of want){
       const k=keyOf(w.card);let m=meshes.get(k);seen.add(k);
       if(!m){
-        m=makeCard(w.card);meshes.set(k,m);
+        m=makeCard(w.card);meshes.set(k,m);m.userData.key=k;m.userData.dealer=!!w.dealer;
         if(reduced()||window.__w3dSnap){m.position.copy(w.pos);m.rotation.y=w.yaw;if(w.up)setFace(m,true,0);m.userData.placed=true;m.userData.target=w.pos.clone();m.userData.yaw=w.yaw;}
         else{m.visible=false;m.position.copy(shoeMouth);dealQueue.push({mesh:m,pos:w.pos,yaw:w.yaw,up:w.up});runDeals();}
         continue;
@@ -423,26 +484,41 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
         tween(320,k=>{m.position.lerpVectors(from,to,k);m.rotation.y=y0+(y1-y0)*k;});
       }
     }
-    for(const[k,m]of meshes){if(seen.has(k)||m.userData.leaving)continue;
-      if(!m.userData.placed){continue;}
-      m.userData.leaving=true;
-      // round over: the cards are gathered into the discard holder
-      const from=m.position.clone(),to=DISCARD_POS.clone().add(new THREE.Vector3(0,0.02,0));
-      setFace(m,false,250);
-      tween(420,k=>{m.position.lerpVectors(from,to,k);m.position.y+=Math.sin(Math.PI*k)*0.05;}).then(()=>{scene.remove(m);meshes.delete(k);
-        discardCount++;discardPile.visible=true;discardPile.scale.y=Math.min(90,discardCount*0.5);discardPile.position.y=discardPile.scale.y*0.0005;});
-    }
+    const gone={p:[],d:[]};
+    for(const[k,m]of meshes){if(seen.has(k)||m.userData.leaving||!m.userData.placed)continue;
+      m.userData.leaving=true;gone[m.userData.dealer?'d':'p'].push(m);}
+    for(const g of[gone.p,gone.d])if(g.length){collectJobs.push(g);runCollect();}
     syncChips();
   }
 
   /* ---------- chips on the betting circles ---------- */
   const stacks=new Map();
   const RACK_POS=new THREE.Vector3(0,TABLE_Y+0.04,EDGE_Z-0.09), PLAYER_POS=new THREE.Vector3(0,TABLE_Y+0.04,EDGE_Z+R+0.3);
+  const chipJobs=[];let chipping=false;
+  async function runChips(){
+    if(chipping)return;chipping=true;
+    while(chipJobs.length){
+      const job=chipJobs.shift(),a=arm.R;a.busy++;
+      if(job.type==='take'){
+        await moveHand(a,job.stack.position.clone().setY(TABLE_Y+0.03),480,null,0.05);
+        job.stack.userData.held=a;
+        await moveHand(a,RACK_POS.clone().setY(TABLE_Y+0.05),560,null,0.07);
+        scene.remove(job.stack);stacks.delete(job.key);
+      }else{
+        await moveHand(a,RACK_POS.clone().setY(TABLE_Y+0.04),440,null,0.05);
+        job.stack.visible=true;job.stack.userData.held=a;
+        await moveHand(a,job.to.clone().setY(TABLE_Y+0.03),600,null,0.07);
+        job.stack.userData.held=null;job.stack.position.copy(job.to);
+      }
+      a.busy--;
+    }
+    chipping=false;
+  }
   function buildStack(amount){
     const grp=new THREE.Group();let left=Math.round(amount/SCv),n=0;
     for(const v of[500,100,25,5]){while(left>=v&&n<24){const c=chipMesh(v);c.position.y=CHIP_H*(n+.5);c.rotation.y=rng()*6;
       c.position.x=(rng()-.5)*0.002;c.position.z=(rng()-.5)*0.002;grp.add(c);left-=v;n++;}}
-    scene.add(grp);return grp;}
+    grp.userData={};scene.add(grp);return grp;}
   function syncChips(){
     const want=new Map(),hs=S.hands||[];
     if(S.phase==='bet'){if(S.bet>0)want.set('h0',{amount:S.bet,pos:chipSpot(0,1)});}
@@ -452,14 +528,15 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       if(win>0)want.set('w'+i,{amount:win,pos:p.clone().add(new THREE.Vector3(CHIP_R*2.3,0,0)),from:RACK_POS});});
     for(const[k,w]of want){let s=stacks.get(k);
       if(s&&s.userData.amount!==w.amount){scene.remove(s);stacks.delete(k);s=null;}
-      if(!s){s=buildStack(w.amount);s.userData={amount:w.amount};stacks.set(k,s);
+      if(!s){s=buildStack(w.amount);s.userData.amount=w.amount;stacks.set(k,s);
         const to=w.pos.clone().setY(TABLE_Y+0.001);
-        if(w.from){const f=w.from.clone();s.position.copy(f);tween(520,q=>{s.position.lerpVectors(f,to,q);s.position.y+=Math.sin(Math.PI*q)*0.08;});}
+        if(w.from){s.position.copy(w.from);s.visible=false;chipJobs.push({type:'pay',stack:s,to});runChips();}
         else s.position.copy(to);}
     }
     for(const[k,s]of stacks){if(want.has(k)||s.userData.leaving)continue;s.userData.leaving=true;
       const lost=hs.some((h,i)=>('h'+i)===k&&(h.outcome==='lose'||h.outcome==='bust'));
-      const f=s.position.clone(),to=(lost?RACK_POS:PLAYER_POS).clone();
+      if(lost){chipJobs.push({type:'take',stack:s,key:k});runChips();continue;}
+      const f=s.position.clone(),to=PLAYER_POS.clone();     // your winnings come back to you
       tween(480,q=>{s.position.lerpVectors(f,to,q);s.position.y+=Math.sin(Math.PI*q)*0.06;}).then(()=>{scene.remove(s);stacks.delete(k);});}
   }
 
@@ -473,7 +550,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     '<a href="https://sketchfab.com/3d-models/low-poly-poker-chips-cards-8420090cc79a49d9a0b85f53c5074616" target="_blank" rel="noopener">“Low Poly Poker Chips &amp; Cards”</a> by Designed By Jonathan; all '+cc+', modified';
   const lab={};
   const getLab=(k)=>{if(!lab[k]){const d=document.createElement('div');d.className='w3l';labels.appendChild(d);lab[k]=d;}return lab[k];};
-  const OUT={win:'WIN',bj:'BLACKJACK',push:'PUSH',lose:'LOSE',bust:'BUST'};
+  const OUT={win:'WON',bj:'BLACKJACK',push:'PUSH',lose:'LOST',bust:'BUST'};
   const fmt=g('fmt')||(n=>'$'+n);
   function placeLabel(k,world,html){const d=getLab(k);const p=world.clone().project(cam);
     if(p.z>1){d.hidden=true;return;}d.hidden=false;
@@ -483,26 +560,59 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     const dc=(S.dealer&&S.dealer.cards)||[];
     const placed=dc.length&&dc.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed;});
     if(placed){const vis=S.dealer.hole?dc.slice(0,1):dc,v=hv(vis);
-      placeLabel('d',new THREE.Vector3(-(dc.length*CW*0.62/2+CW*0.75),TABLE_Y,EDGE_Z+0.17),`<span class="tot">${v.total}${v.soft&&v.total<21?'<small>soft</small>':''}</span>`);used.add('d');}
+      const dOut=!S.dealer.hole&&v.total>21?'<span class="out o-bust">BUST</span>':'';
+      placeLabel('d',new THREE.Vector3((dc.length-1)/2*FAN*1.6+CW*0.5+0.03,TABLE_Y,EDGE_Z+0.08+CH*0.25),`${dOut}<span class="tot${v.total>21?' t-bust':''}">${v.total}</span>`);used.add('d');}
     (S.hands||[]).forEach((h,i,hs)=>{
       const ok=h.cards.length&&h.cards.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed;});
       if(!ok)return;const v=hv(h.cards),sp=chipSpot(i,hs.length);
       const act=S.phase==='player'&&i===S.active&&hs.length>1;
       const o=h.outcome&&OUT[h.outcome]?`<span class="out o-${h.outcome}">${OUT[h.outcome]}</span>`:'';
-      placeLabel('h'+i,handSpot(i,hs.length).add(new THREE.Vector3(-(CW*1.15),0,0)),`${o}<span class="tot${act?' act':''}">${v.total}${v.soft&&v.total<21?'<small>soft</small>':''}</span>`);
-      placeLabel('hb'+i,sp.clone().add(new THREE.Vector3(0,0,0.085)),`<span class="bet">${fmt(h.bet)}</span>`);used.add('hb'+i);
+      const tcls=h.outcome==='win'||h.outcome==='bj'?' t-win':v.total>21?' t-bust':'';
+      placeLabel('h'+i,handSpot(i,hs.length).add(new THREE.Vector3((h.cards.length-1)/2*FAN+CW*0.5+0.03,0,CH*0.25)),`<span class="tot${act?' act':''}${tcls}">${v.total}</span>`);
+      if(o){placeLabel('ho'+i,handSpot(i,hs.length).add(new THREE.Vector3(-(h.cards.length-1)/2*FAN-CW*0.5-0.05,0,0)),o);used.add('ho'+i);}
       used.add('h'+i);});
-    if(S.phase==='bet'&&S.bet>0){placeLabel('b',chipSpot(0,1).add(new THREE.Vector3(0,0,0.11)),`<span class="bet">${fmt(S.bet)}</span>`);used.add('b');}
+    if(S.phase==='bet'&&S.bet>0){placeLabel('b',chipSpot(0,1).add(new THREE.Vector3(0.09,0,0)),`<span class="bet">${fmt(S.bet)}</span>`);used.add('b');}
     for(const k in lab)if(!used.has(k))lab[k].hidden=true;
   }
   // a soft ring under the hand in play when there are split hands
   const activeRing=new THREE.Mesh(new THREE.RingGeometry(0.1,0.118,48),new THREE.MeshBasicMaterial({color:0xfff0b0,transparent:true,opacity:.75}));
   activeRing.rotation.x=-Math.PI/2;activeRing.visible=false;scene.add(activeRing);
 
+  /* ---------- your chips: on the felt in front of your seat; tap one to add it to your bet ---------- */
+  const selector=[],raycaster=new THREE.Raycaster(),ptr=new THREE.Vector2();
+  const CHIPV=(typeof CHIPS!=='undefined'?CHIPS:[5,25,100,500]);
+  let selected=null;
+  const glow=new THREE.Mesh(new THREE.RingGeometry(CHIP_R*1.05,CHIP_R*1.5,40),new THREE.MeshBasicMaterial({color:0xffe08a,transparent:true,opacity:.85,depthWrite:false,toneMapped:false}));
+  glow.rotation.x=-Math.PI/2;glow.visible=false;scene.add(glow);
+  CHIPV.forEach((v,i)=>{
+    const grp=new THREE.Group();const n=3;
+    for(let k=0;k<n;k++){const c=chipMesh(v);c.position.y=CHIP_H*(k+.5);c.rotation.y=k*1.3;grp.add(c);}
+    const lab=tex(canvas(128,128,(c,w,h)=>{c.fillStyle='rgba(0,0,0,0)';c.clearRect(0,0,w,h);c.fillStyle='#fff';c.font='700 46px Arial, Helvetica, sans-serif';
+      c.textAlign='center';c.textBaseline='middle';const f=g('chipLabel');c.fillText(f?f(v*SCv):String(v*SCv),64,68);}));
+    const top=new THREE.Mesh(new THREE.CircleGeometry(CHIP_R*0.62,32),new THREE.MeshBasicMaterial({map:lab,transparent:true,depthWrite:false,toneMapped:false}));
+    top.rotation.x=-Math.PI/2;top.position.y=CHIP_H*n+0.0006;grp.add(top);
+    const a=Math.PI/2-(i-(CHIPV.length-1)/2)*0.2;
+    grp.position.copy(arcPt(R-0.075,a,TABLE_Y+0.0005));grp.userData={v};scene.add(grp);selector.push(grp);
+  });
+  function updateSelector(now){
+    const bet=S.phase==='bet';
+    for(const c of selector){const ok=bet&&c.userData.v*SCv<=S.bankroll;c.position.y=TABLE_Y+0.0005+(ok&&c===selected?0.004:0);}
+    if(selected&&bet){glow.visible=true;glow.position.copy(selected.position).setY(TABLE_Y+0.0012);glow.material.opacity=.55+.3*Math.sin(now/220);}else glow.visible=false;
+  }
+  cv.addEventListener('pointerdown',e=>{
+    if(S.phase!=='bet')return;
+    ptr.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);raycaster.setFromCamera(ptr,cam);
+    const hit=raycaster.intersectObjects(selector,true)[0];if(!hit)return;
+    let o=hit.object;while(o&&!selector.includes(o))o=o.parent;if(!o)return;
+    const add=g('addChip')||(typeof addChip==='function'?addChip:null);
+    if(o.userData.v*SCv>S.bankroll)return;
+    selected=o;if(add)add(o.userData.v*SCv);
+  });
+
   /* ---------- camera: your seat, plus the two side views ---------- */
   const cam=new THREE.PerspectiveCamera(48,1,0.05,40);
-  const VIEWS=[{a:90,r:1.6,y:2.4,ly:TABLE_Y+0.12,lz:EDGE_Z+0.25},{a:90,r:2.0,y:1.72,ly:TABLE_Y+0.15,lz:EDGE_Z+0.15},
-               {a:132,r:2.1,y:2.05,ly:TABLE_Y+0.08,lz:EDGE_Z+0.3},{a:48,r:2.1,y:2.05,ly:TABLE_Y+0.08,lz:EDGE_Z+0.3}];
+  const VIEWS=[{a:102,r:1.75,y:2.25,ly:TABLE_Y+0.05,lz:EDGE_Z+0.2},{a:90,r:1.5,y:1.62,ly:TABLE_Y+0.2,lz:EDGE_Z+0.05},
+               {a:135,r:1.6,y:1.95,ly:TABLE_Y+0.05,lz:EDGE_Z+0.2},{a:45,r:1.6,y:1.95,ly:TABLE_Y+0.05,lz:EDGE_Z+0.2}];
   const LOOK=new THREE.Vector3(0,VIEWS[0].ly,VIEWS[0].lz),lookWant=new THREE.Vector3();
   let view=0;const camPos=new THREE.Vector3(),camWant=new THREE.Vector3();
   function viewPos(v,out){const V=VIEWS[v],a=V.a*Math.PI/180;return out.set(V.r*Math.cos(a),V.y,EDGE_Z+V.r*Math.sin(a));}
@@ -510,8 +620,8 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   function fitCamera(){
     const asp=innerWidth/innerHeight;cam.aspect=asp;
     // keep the whole table across the screen: wider screens use a natural lens, narrow ones step back
-    const hHalf=Math.atan(Math.tan(24*Math.PI/180)*asp);const need=1.42/Math.tan(hHalf);
-    cam.fov=48;cam.userData.dist=Math.min(2.2,Math.max(1,need/2.05));cam.updateProjectionMatrix();
+    const hHalf=Math.atan(Math.tan(24*Math.PI/180)*asp);const need=1.05/Math.tan(hHalf);
+    cam.fov=48;cam.userData.dist=Math.min(2.2,Math.max(1,need/1.75));cam.updateProjectionMatrix();
   }
 
   /* ---------- hand the screen over to the 3D table ---------- */
@@ -534,19 +644,26 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     const sig=JSON.stringify([S.phase,S.bet,S.active,S.dealer&&S.dealer.hole,(S.dealer&&S.dealer.cards||[]).length,(S.hands||[]).map(h=>[h.cards.length,h.bet,h.outcome,h.doubled])]);
     if(sig!==lastSig){lastSig=sig;sync();}
     resetPose();                                           // his standing pose, then the live motion on top
-    { const a=arm.L,tgt=dealing?a.target:(S.phase==='player'?chipSpot(S.active||0,(S.hands||[]).length||1):(S.phase==='bet'?chipSpot(0,1):null));
-      turnHead(tgt,dt,reduced()?0:now); }
-    { const a=arm.R,want=S.phase==='player'?1:0;          // your turn: his right hand opens towards your cards, palm up
-      pointBlend+=(want-pointBlend)*(1-Math.exp(-dt*(want?2.6:4)));
-      if(pointBlend>0.002){
-        const hs=S.hands||[],spot=handSpot(S.active||0,hs.length||1),sh=wp(a.u),dir=spot.clone().sub(sh).setY(0).normalize();
-        const beck=reduced()?0:Math.sin(now/380);          // a small beckon: hit or stand?
-        const p=sh.clone().addScaledVector(dir,0.6+0.03*beck).setY(TABLE_Y+0.17+0.015*beck);
-        a.target.lerpVectors(REST.R,p,pointBlend);a.supinate=pointBlend;
-      }else{a.target.copy(REST.R);a.supinate=0;}
+    // right hand: on your turn it points at your cards (hit or stand?), otherwise it rests; chip work takes priority
+    const pointing=S.phase==='player'&&!dealing&&!arm.R.busy;
+    { const a=arm.R,k=1-Math.exp(-dt*7);
+      if(!a.busy){
+        let goal=REST.R;
+        if(pointing){const hs=S.hands||[],c=handSpot(S.active||0,hs.length||1),d=c.clone().sub(a.shoulder0).setY(0).normalize();
+          const tap=reduced()?0:Math.max(0,Math.sin(now/230))*0.018;   // a light tap towards the cards
+          goal=c.clone().addScaledVector(d,-0.02).setY(TABLE_Y+0.075-tap);}
+        a.target.lerp(goal,1-Math.exp(-dt*(pointing?3.5:5)));
+      }
+      const want=pointing?1:0;a.point+=(want-a.point)*k;a.down+=(want-a.down)*k;
     }
+    leanTowards(dt);
+    { const tgt=dealing||collecting?arm.L.target:(arm.R.busy?arm.R.target:(S.phase==='player'?handSpot(S.active||0,(S.hands||[]).length||1):(S.phase==='bet'?chipSpot(0,1):null)));
+      turnHead(tgt,dt,reduced()?0:now); }
     solveArm(arm.R);solveArm(arm.L);
-    for(const m of meshes.values())if(m.userData.held){gripPoint(arm.L,m.position);m.position.y=Math.max(m.position.y,TABLE_Y+0.004);}
+    // whatever a hand is holding follows it
+    for(const m of meshes.values())if(m.userData.held){gripPoint(m.userData.held,m.position);m.position.y=Math.max(m.position.y+(m.userData.heldOff||0),TABLE_Y+0.004);}
+    for(const st of stacks.values())if(st.userData.held){gripPoint(st.userData.held,st.position);st.position.y=Math.max(st.position.y-0.02,TABLE_Y+0.001);}
+    updateSelector(now);
     const hs=S.hands||[];
     if(S.phase==='player'&&hs.length>1){activeRing.visible=true;activeRing.position.copy(chipSpot(S.active,hs.length)).setY(TABLE_Y+0.0015);}else activeRing.visible=false;
     lookWant.set(0,VIEWS[view].ly,VIEWS[view].lz);LOOK.lerp(lookWant,1-Math.exp(-dt*3));
