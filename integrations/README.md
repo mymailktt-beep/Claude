@@ -12,7 +12,9 @@ How it fits into the game:
 - A camera button in the top bar cycles between your seat and the two side views.
 - If WebGL or three.js can't load, the 2D table stays.
 
-To install it, paste the snippet before `</body>` and publish `dealer-model.js` next to the page. That file is `export default "<base64 of assets/dealer-realistic.glb>";`; it is a script because artifacts don't serve `.glb` files.
+The table is `assets/table.glb`, with its long straight dealer section shortened to 22 cm at load time so the dealer stands close to the players. The chips and the card back come from `assets/chips-cards.glb`. While it is your turn, the dealer leans in and offers an open hand towards your cards.
+
+To install it, paste the snippet before `</body>` and publish `dealer-model.js`, `table-model.js` and `chips-model.js` next to the page (each is `export default "<base64 of the .glb>";`). That file is `export default "<base64 of assets/dealer-realistic.glb>";`; it is a script because artifacts don't serve `.glb` files.
 
 The camera button cycles through four views: high over the felt so the cards read from above (the default), your seat, and the two side seats.
 
