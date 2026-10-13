@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 
-const DEALER_GLB='__GLB__';
+const DEALER_URL='./dealer-model.js';                 // the dealer GLB, published next to this page as a script
 const TABLE_Y=0.95, EDGE_Z=0.22, R=1.15;                 // felt height, dealer-side edge, felt radius (m)
 const CARD_S=1.9, CW=0.0635*CARD_S, CH=0.0889*CARD_S;   // cards a little larger than life so they read on a phone
 const CHIP_R=0.021*1.35, CHIP_H=0.0042*1.35;
@@ -196,9 +196,9 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     table.add(holder);
     // wood skirt under the rail, and the apron down to the pedestal
     const skirt=new THREE.Mesh(new THREE.CylinderGeometry(R+0.25,R+0.2,0.1,96,1,true,-Math.PI/2,Math.PI),woodMat);
-    skirt.rotation.y=Math.PI/2;skirt.position.set(0,TABLE_Y-0.06,EDGE_Z);skirt.material.side=THREE.DoubleSide;table.add(skirt);
+    skirt.position.set(0,TABLE_Y-0.06,EDGE_Z);skirt.material.side=THREE.DoubleSide;table.add(skirt);
     const apron=new THREE.Mesh(new THREE.CylinderGeometry(R+0.12,R-0.05,0.2,96,1,true,-Math.PI/2,Math.PI),std({color:0x14100d,roughness:.7,side:THREE.DoubleSide}));
-    apron.rotation.y=Math.PI/2;apron.position.set(0,TABLE_Y-0.2,EDGE_Z);table.add(apron);
+    apron.position.set(0,TABLE_Y-0.2,EDGE_Z);table.add(apron);
     const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.32,0.78,32),std({color:0x1b1410,roughness:.5}));
     ped.position.set(0,0.39,EDGE_Z+0.45);ped.castShadow=true;table.add(ped);
     // dealer-side edge
@@ -260,58 +260,77 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     scene.add(ch);};
   [24,56,124,156].forEach(d=>chair(d));
 
-  /* ---------- the dealer ---------- */
-  const bytes=Uint8Array.from(atob(DEALER_GLB),c=>c.charCodeAt(0));
-  const gltf=await new GLTFLoader().parseAsync(bytes.buffer,'');
-  const dealer=gltf.scene;dealer.position.set(0,0,DEALER_Z);scene.add(dealer);
-  dealer.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
-  for(const n of['Chair','HeldCard']){const o=dealer.getObjectByName(n);if(o)o.visible=false;}
-  const mixer=new THREE.AnimationMixer(dealer);
-  const clip=n=>THREE.AnimationClip.findByName(gltf.animations,n);
-  const idle=mixer.clipAction(clip('Idle'));idle.play();
-  const nod=mixer.clipAction(clip('Nod'));nod.setLoop(THREE.LoopOnce,1);
-  mixer.addEventListener('finished',e=>{if(e.action===nod){nod.fadeOut(.25);idle.reset().fadeIn(.25).play();}});
-  const headN=dealer.getObjectByName('Head');
-
-  // two-bone arm IK: shoulder -> elbow -> wrist, elbow bending outward and down; the hand stays palm-down
-  const L1=0.30,L2=0.27,GRIP=0.085;
+  /* ---------- the dealer: a rigged character, his arms driven by IK ---------- */
+  const glbBuf=Uint8Array.from(atob((await import(DEALER_URL)).default),c=>c.charCodeAt(0)).buffer;
+  const gltf=await new GLTFLoader().parseAsync(glbBuf,'');
+  const dealer=new THREE.Group();dealer.position.set(0,0,DEALER_Z);scene.add(dealer);
+  const body=gltf.scene;dealer.add(body);
+  body.scale.setScalar(1/1.83);                            // the export is 1.83x life size; this makes him about 1.8 m
+  body.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;}});
+  // his built-in pose has a casual head tilt; the spine, neck and head stand upright instead (their bind pose)
+  const UPRIGHT=['Hips_01','Spine_02','Spine1_03','Spine2_04','Neck_05','Neck1_06','Neck2_07','Head_08'].map(n=>body.getObjectByName(n)).filter(Boolean).map(b=>[b,b.quaternion.clone()]);
+  const standUp=()=>{for(const[b,q]of UPRIGHT)b.quaternion.copy(q);};
+  const mixer=new THREE.AnimationMixer(body);
+  if(gltf.animations[0])mixer.clipAction(gltf.animations[0]).play();   // his relaxed standing pose
+  mixer.update(0);standUp();body.updateMatrixWorld(true);
+  const bone=n=>body.getObjectByName(n);
+  const headB=bone('Head_08'),neckB=bone('Neck_05'),chestB=bone('Spine2_04');
+  const wp=(o,v=new THREE.Vector3())=>o.getWorldPosition(v);
+  const NAMES={L:['LeftArm_013','LeftForeArm_014','LeftHand_017','LeftHandMiddle1_026','LeftHandIndex1_022','LeftHandPinky1_034'],
+               R:['RightArm_039','RightForeArm_040','RightHand_043','RightHandMiddle1_00','RightHandIndex1_048','RightHandPinky1_059']};
   const arm={};
-  for(const s of['R','L']){arm[s]={u:dealer.getObjectByName('UpperArm'+s),f:dealer.getObjectByName('Forearm'+s),h:dealer.getObjectByName('Hand'+s),
-    side:s==='R'?-1:1,target:new THREE.Vector3(),dir:new THREE.Vector3(0,0,1),wrist:new THREE.Vector3()};}
-  const REST={R:new THREE.Vector3(-0.36,TABLE_Y+0.06,DEALER_Z+0.34),L:new THREE.Vector3(0.36,TABLE_Y+0.06,DEALER_Z+0.34)};
+  for(const s of['L','R']){const[u,f,h,m,i,p]=NAMES[s].map(bone);
+    arm[s]={side:s==='L'?1:-1,u,f,h,m,i,p,target:new THREE.Vector3(),dir:new THREE.Vector3(0,0,1),wrist:new THREE.Vector3(),
+      L1:wp(u).distanceTo(wp(f)),L2:wp(f).distanceTo(wp(h)),HL:wp(h).distanceTo(wp(m))+0.05};}
+  // resting: fingertips on the felt either side of the chip rack
+  const REST={L:new THREE.Vector3(0.34,TABLE_Y+0.012,DEALER_Z+0.36),R:new THREE.Vector3(-0.34,TABLE_Y+0.012,DEALER_Z+0.36)};
   for(const s of['R','L'])arm[s].target.copy(REST[s]);
-  const _v=new THREE.Vector3(),_w=new THREE.Vector3(),_e=new THREE.Vector3(),_p=new THREE.Vector3(),_m=new THREE.Matrix4(),_q=new THREE.Quaternion(),_pq=new THREE.Quaternion();
-  const UP=new THREE.Vector3(0,1,0);
-  function aim(node,dirWorld,zHint){
-    // point the node's -Y along dirWorld with its +Z as close to zHint as possible
-    const y=_v.copy(dirWorld).normalize().negate();
-    const x=new THREE.Vector3().crossVectors(y,zHint);if(x.lengthSq()<1e-6)x.set(1,0,0);x.normalize();
-    const z=new THREE.Vector3().crossVectors(x,y).normalize();
-    _m.makeBasis(x,y,z);_q.setFromRotationMatrix(_m);
-    node.parent.getWorldQuaternion(_pq);node.quaternion.copy(_pq.invert().multiply(_q));
-    node.updateMatrixWorld(true);
+  const _q=new THREE.Quaternion(),_qa=new THREE.Quaternion(),_qb=new THREE.Quaternion(),_pq=new THREE.Quaternion(),_a=new THREE.Vector3(),_b=new THREE.Vector3();
+  const UP=new THREE.Vector3(0,1,0),DOWN=new THREE.Vector3(0,-1,0);
+  function setWorldQ(b,qw){b.parent.getWorldQuaternion(_pq);b.quaternion.copy(_pq.invert().multiply(qw));b.updateMatrixWorld(true);}
+  function aimBone(b,child,dirWorld){                      // smallest rotation that points bone->child along dirWorld
+    const cur=wp(child,_a).sub(wp(b,_b)).normalize();
+    _qa.setFromUnitVectors(cur,_b.copy(dirWorld).normalize());
+    b.getWorldQuaternion(_qb);setWorldQ(b,_qb.premultiply(_qa));
   }
+  function rollBone(b,axis,from,to,amount=1){              // twist a bone about axis so 'from' turns toward 'to'
+    const f=from.clone().projectOnPlane(axis).normalize(),t=to.clone().projectOnPlane(axis).normalize();
+    let ang=Math.acos(Math.max(-1,Math.min(1,f.dot(t))));if(new THREE.Vector3().crossVectors(f,t).dot(axis)<0)ang=-ang;
+    _qa.setFromAxisAngle(axis,ang*amount);b.getWorldQuaternion(_qb);setWorldQ(b,_qb.premultiply(_qa));
+  }
+  const palmNormal=(a)=>{const f=wp(a.m).sub(wp(a.h)).normalize(),ip=wp(a.i).sub(wp(a.p));
+    return {f,n:a.side>0?new THREE.Vector3().crossVectors(f,ip).normalize():new THREE.Vector3().crossVectors(ip,f).normalize()};};
   function solveArm(a){
-    if(!a.u)return;
-    a.u.parent.updateMatrixWorld(true);
-    const S0=a.u.getWorldPosition(new THREE.Vector3());
-    _w.copy(a.target).sub(_p.copy(a.dir).setY(0).normalize().multiplyScalar(GRIP));   // wrist sits behind the grip point
-    let d=_w.distanceTo(S0);const reach=(L1+L2)*0.995;
-    const dirSW=_v.copy(_w).sub(S0).normalize().clone();
-    if(d>reach){_w.copy(S0).addScaledVector(dirSW,reach);d=reach;}
-    d=Math.max(d,0.12);
-    const ax=(L1*L1-L2*L2+d*d)/(2*d),h=Math.sqrt(Math.max(0,L1*L1-ax*ax));
-    const pole=new THREE.Vector3(a.side*0.9,-1,-0.35).normalize();
-    pole.addScaledVector(dirSW,-pole.dot(dirSW)).normalize();
-    _e.copy(S0).addScaledVector(dirSW,ax).addScaledVector(pole,h);
-    const fwd=new THREE.Vector3(0,0,1);
-    aim(a.u,new THREE.Vector3().subVectors(_e,S0),fwd);
-    aim(a.f,new THREE.Vector3().subVectors(_w,_e),UP);
-    const hd=new THREE.Vector3(a.dir.x,0,a.dir.z).normalize();hd.y=-0.32;   // fingertips just touching the felt
-    aim(a.h,hd,UP);
-    a.wrist.copy(a.h.getWorldPosition(_p));
+    // two-bone IK: shoulder -> elbow -> wrist, the elbow out and down; then the hand flat, fingers to the felt
+    const hd=new THREE.Vector3(a.dir.x,0,a.dir.z).normalize();hd.y=-0.36;hd.normalize();
+    const W=a.target.clone().addScaledVector(hd,-a.HL).add(new THREE.Vector3(0,0.015,0));
+    const S0=wp(a.u);const dirSW=W.clone().sub(S0);let d=dirSW.length();dirSW.normalize();
+    const reach=(a.L1+a.L2)*0.995;if(d>reach){W.copy(S0).addScaledVector(dirSW,reach);d=reach;}
+    d=Math.max(d,Math.abs(a.L1-a.L2)+0.02);
+    const ax=(a.L1*a.L1-a.L2*a.L2+d*d)/(2*d),h=Math.sqrt(Math.max(0,a.L1*a.L1-ax*ax));
+    const pole=new THREE.Vector3(a.side*0.9,-1,-0.35).normalize();pole.addScaledVector(dirSW,-pole.dot(dirSW)).normalize();
+    const E=S0.clone().addScaledVector(dirSW,ax).addScaledVector(pole,h);
+    aimBone(a.u,a.f,E.clone().sub(S0));
+    aimBone(a.f,a.h,W.clone().sub(wp(a.f)));
+    aimBone(a.h,a.m,hd);
+    // turn the palm to face the felt: half of the twist in the forearm, the rest in the wrist
+    let p=palmNormal(a);const fa=wp(a.h).sub(wp(a.f)).normalize();rollBone(a.f,fa,p.n,DOWN,0.5);
+    p=palmNormal(a);rollBone(a.h,p.f,p.n,DOWN,1);
+    a.wrist.copy(wp(a.h));
   }
-  const gripPoint=(a,out)=>{a.h.updateMatrixWorld(true);return out.set(0,-0.1,-0.022).applyMatrix4(a.h.matrixWorld);};
+  const gripPoint=(a,out)=>{const m=wp(a.m),h=wp(a.h);return out.copy(m).addScaledVector(m.sub(h).normalize(),0.035).add(new THREE.Vector3(0,-0.016,0));};
+  // head: looks at a point; a nod when a hand is settled; a little breathing in the chest
+  let lookYaw=0,lookPitch=0,nodT=-1;
+  function turnHead(target,dt,now){
+    let ty=0,tp=0.12;
+    if(target){const l=dealer.worldToLocal(target.clone()),hp=dealer.worldToLocal(wp(headB));
+      ty=Math.max(-.7,Math.min(.7,Math.atan2(l.x-hp.x,l.z-hp.z)));tp=Math.max(0,Math.min(.75,Math.atan2(hp.y-l.y,Math.hypot(l.x-hp.x,l.z-hp.z))-0.35));}
+    const k=1-Math.exp(-dt*6);lookYaw+=(ty-lookYaw)*k;lookPitch+=(tp-lookPitch)*k;
+    let nod=0;if(nodT>=0){const t=(now-nodT)/1000;if(t>1.2)nodT=-1;else nod=Math.sin(Math.PI*Math.min(1,t/1.2))*0.35;}
+    chestB.getWorldQuaternion(_qb);setWorldQ(chestB,_qb.premultiply(_qa.setFromAxisAngle(new THREE.Vector3(1,0,0),Math.sin(now/1300)*0.012)));
+    neckB.getWorldQuaternion(_qb);setWorldQ(neckB,_qb.premultiply(_qa.setFromEuler(new THREE.Euler((lookPitch+nod)*0.4,lookYaw*0.4,0,'YXZ'))));
+    headB.getWorldQuaternion(_qb);setWorldQ(headB,_qb.premultiply(_qa.setFromEuler(new THREE.Euler((lookPitch+nod)*0.6,lookYaw*0.6,0,'YXZ'))));
+  }
 
   /* ---------- tweens ---------- */
   const tweens=new Set();
@@ -429,6 +448,9 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
 
   /* ---------- labels: totals, outcomes, bets (HTML over the 3D view) ---------- */
   const labels=document.createElement('div');labels.id='w3dLabels';
+  // the dealer model is CC BY 4.0, which asks for this credit
+  const credit=document.createElement('div');credit.id='w3dCredit';
+  credit.innerHTML='Dealer: <a href="https://sketchfab.com/3d-models/indian-man-in-suit-985dd9756d89464b9380414b5b12d8aa" target="_blank" rel="noopener">“Indian Man in suit”</a> by Pixel_Monster, <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>';
   const lab={};
   const getLab=(k)=>{if(!lab[k]){const d=document.createElement('div');d.className='w3l';labels.appendChild(d);lab[k]=d;}return lab[k];};
   const OUT={win:'WIN',bj:'BLACKJACK',push:'PUSH',lose:'LOSE',bust:'BUST'};
@@ -459,8 +481,9 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
 
   /* ---------- camera: your seat, plus the two side views ---------- */
   const cam=new THREE.PerspectiveCamera(48,1,0.05,40);
-  const VIEWS=[{a:90,r:2.1,y:1.74},{a:132,r:2.2,y:1.8},{a:48,r:2.2,y:1.8}];
-  const LOOK=new THREE.Vector3(0,TABLE_Y+0.12,EDGE_Z+0.36);
+  const VIEWS=[{a:90,r:1.7,y:2.45,ly:TABLE_Y+0.1,lz:EDGE_Z+0.42},{a:90,r:2.1,y:1.74,ly:TABLE_Y+0.12,lz:EDGE_Z+0.36},
+               {a:132,r:2.2,y:2.1,ly:TABLE_Y+0.05,lz:EDGE_Z+0.45},{a:48,r:2.2,y:2.1,ly:TABLE_Y+0.05,lz:EDGE_Z+0.45}];
+  const LOOK=new THREE.Vector3(0,VIEWS[0].ly,VIEWS[0].lz),lookWant=new THREE.Vector3();
   let view=0;const camPos=new THREE.Vector3(),camWant=new THREE.Vector3();
   function viewPos(v,out){const V=VIEWS[v],a=V.a*Math.PI/180;return out.set(V.r*Math.cos(a),V.y,EDGE_Z+V.r*Math.sin(a));}
   viewPos(0,camPos);
@@ -472,13 +495,13 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   }
 
   /* ---------- hand the screen over to the 3D table ---------- */
-  wrap.prepend(labels);wrap.prepend(cv);wrap.classList.add('w3d');
+  wrap.prepend(credit);wrap.prepend(labels);wrap.prepend(cv);wrap.classList.add('w3d');
   window.flyFromShoe=function(){};                         // the 3D dealer deals now
   const viewBtn=document.createElement('button');viewBtn.className='iconbtn';viewBtn.id='viewBtn';viewBtn.setAttribute('aria-label','Change view');viewBtn.title='Change view';
   viewBtn.innerHTML='<svg viewBox="0 0 24 24" width="60%" height="60%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="4"/></svg>';
   viewBtn.onclick=()=>{view=(view+1)%VIEWS.length;};
   const menu=document.getElementById('menuBtn');if(menu&&menu.parentNode)menu.parentNode.insertBefore(viewBtn,menu);
-  window.bjDealerPose=function(name,ms){if(name==='dl_complete'){idle.fadeOut(.2);nod.reset().fadeIn(.2).play();}};
+  window.bjDealerPose=function(name){if(name==='dl_complete')nodT=performance.now();};
   window.__w3dSnap=true;sync();window.__w3dSnap=false;     // whatever is on the table already appears without a deal
 
   let last=performance.now(),lastSig='';
@@ -490,16 +513,15 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // mirror the game state when it changes
     const sig=JSON.stringify([S.phase,S.bet,S.active,S.dealer&&S.dealer.hole,(S.dealer&&S.dealer.cards||[]).length,(S.hands||[]).map(h=>[h.cards.length,h.bet,h.outcome,h.doubled])]);
     if(sig!==lastSig){lastSig=sig;sync();}
-    mixer.update(reduced()?0:dt);
-    // the dealer watches the card he is dealing, otherwise the player
-    if(headN){const a=arm.L,tgt=dealing?a.target:(S.phase==='player'?chipSpot(S.active||0,(S.hands||[]).length||1):null);
-      if(tgt){const local=dealer.worldToLocal(tgt.clone());const yaw=Math.atan2(local.x,local.z),pitch=Math.atan2(1.68-tgt.y,Math.hypot(local.x,local.z))-0.25;
-        headN.quaternion.multiply(_q.setFromEuler(new THREE.Euler(Math.max(0,Math.min(.6,pitch))*.8,Math.max(-.7,Math.min(.7,yaw))*.8,0)));}}
+    mixer.update(0);standUp();body.updateMatrixWorld(true); // re-apply his standing pose, then layer the live motion on top
+    { const a=arm.L,tgt=dealing?a.target:(S.phase==='player'?chipSpot(S.active||0,(S.hands||[]).length||1):(S.phase==='bet'?chipSpot(0,1):null));
+      turnHead(tgt,dt,reduced()?0:now); }
     solveArm(arm.R);solveArm(arm.L);
     for(const m of meshes.values())if(m.userData.held){gripPoint(arm.L,m.position);m.position.y=Math.max(m.position.y,TABLE_Y+0.004);}
     const hs=S.hands||[];
     if(S.phase==='player'&&hs.length>1){activeRing.visible=true;activeRing.position.copy(chipSpot(S.active,hs.length)).setY(TABLE_Y+0.0015);}else activeRing.visible=false;
-    viewPos(view,camWant);camWant.sub(LOOK).multiplyScalar(cam.userData.dist||1).add(LOOK);
+    lookWant.set(0,VIEWS[view].ly,VIEWS[view].lz);LOOK.lerp(lookWant,1-Math.exp(-dt*3));
+    viewPos(view,camWant);camWant.sub(lookWant).multiplyScalar(cam.userData.dist||1).add(lookWant);
     camPos.lerp(camWant,1-Math.exp(-dt*3));cam.position.copy(camPos);cam.lookAt(LOOK);
     renderer.render(scene,cam);
     syncLabels();

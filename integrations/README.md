@@ -2,7 +2,7 @@
 
 ## `blackjack-table3d.html` (current)
 
-Turns the BlackJack artifact into a full 3D table: casino carpet, blue felt with the printed arcs and betting circles, a leather and burl-wood rail with gold cup holders, a chip rack, an acrylic shoe, a discard holder, a limits placard and leather chairs. The dealer from `assets/dealer.glb` stands behind the table and deals every card with his own left hand from the shoe, using two-bone IK for the arms.
+Turns the BlackJack artifact into a full 3D table: casino carpet, blue felt with the printed arcs and betting circles, a leather and burl-wood rail with gold cup holders, a chip rack, an acrylic shoe, a discard holder, a limits placard and leather chairs. The dealer is the rigged character in `assets/dealer-realistic.glb` (see `assets/CREDITS.md`; the page shows the required CC BY credit). He stands behind the table, and his real arm bones are driven by two-bone IK: he deals every card with his left hand from the shoe, and his head follows the play.
 
 ![3D table](../assets/table3d-preview.png)
 
@@ -12,7 +12,9 @@ How it fits into the game:
 - A camera button in the top bar cycles between your seat and the two side views.
 - If WebGL or three.js can't load, the 2D table stays.
 
-To install it, paste the snippet before `</body>` and replace `__GLB__` with the base64 of `assets/dealer.glb`.
+To install it, paste the snippet before `</body>` and publish `dealer-model.js` next to the page. That file is `export default "<base64 of assets/dealer-realistic.glb>";`; it is a script because artifacts don't serve `.glb` files.
+
+The camera button cycles through four views: high over the felt so the cards read from above (the default), your seat, and the two side seats.
 
 
 ## `blackjack-dealer3d.html` (earlier, superseded)
