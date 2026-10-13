@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dealer Viewer</title>
+<style>
+  :root { --bg: #16302a; --fg: #f6f1e7; --brass: #c9a25a; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px system-ui, sans-serif; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 8px; flex-wrap: wrap;
+         justify-content: center; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+  button { padding: 10px 16px; border-radius: 10px; border: 1px solid var(--brass); background: rgba(0,0,0,.35);
+           color: var(--fg); font-weight: 600; }
+  button.on { background: var(--brass); color: #20180a; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar"></div>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/" } }
+</script>
+<script type="module">
+// Open with a local server next to dealer.glb, e.g. `npx http-server assets`.
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x16302a);
+scene.add(new THREE.HemisphereLight(0xfff4e6, 0x30402f, 1.6));
+const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(1.5, 3, 3); scene.add(key);
+const table = new THREE.Mesh(new THREE.BoxGeometry(2, 0.05, 1), new THREE.MeshStandardMaterial({ color: 0x1f6a45 }));
+table.position.set(0, 0.925, 0.62); scene.add(table);
+
+const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 20);
+camera.position.set(0, 1.65, 2.1);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.3, 0.2); controls.update();
+
+let mixer, current;
+new GLTFLoader().load('dealer.glb', (gltf) => {
+  scene.add(gltf.scene);
+  mixer = new THREE.AnimationMixer(gltf.scene);
+  const bar = document.getElementById('bar');
+  for (const clip of gltf.animations) {
+    const b = document.createElement('button');
+    b.textContent = clip.name;
+    b.onclick = () => {
+      const action = mixer.clipAction(clip);
+      if (current && current !== action) current.fadeOut(0.2);
+      action.reset().fadeIn(0.2).play();
+      if (clip.name !== 'Idle') { action.setLoop(THREE.LoopOnce); action.clampWhenFinished = false; }
+      current = action;
+      bar.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    };
+    bar.appendChild(b);
+  }
+  bar.firstChild.click();
+  mixer.addEventListener('finished', () => bar.firstChild.click());   // back to Idle
+});
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const w = innerWidth, h = innerHeight;
+  if (renderer.domElement.width !== Math.floor(w * devicePixelRatio)) {
+    renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  mixer?.update(clock.getDelta());
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
