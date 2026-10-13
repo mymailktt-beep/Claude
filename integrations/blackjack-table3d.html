@@ -273,6 +273,10 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const mixer=new THREE.AnimationMixer(body);
   if(gltf.animations[0])mixer.clipAction(gltf.animations[0]).play();   // his relaxed standing pose
   mixer.update(0);standUp();body.updateMatrixWorld(true);
+  // Snapshot that pose. Every frame starts again from it, so the arm IK never builds on the previous frame's result
+  // (the built-in clip is a single frame and does not reset the bones by itself).
+  const POSE=[];body.traverse(o=>{if(o.isBone)POSE.push([o,o.quaternion.clone(),o.position.clone()]);});
+  const resetPose=()=>{for(const[b,q,p]of POSE){b.quaternion.copy(q);b.position.copy(p);}body.updateMatrixWorld(true);};
   const bone=n=>body.getObjectByName(n);
   const headB=bone('Head_08'),neckB=bone('Neck_05'),chestB=bone('Spine2_04');
   const wp=(o,v=new THREE.Vector3())=>o.getWorldPosition(v);
@@ -302,9 +306,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     return {f,n:a.side>0?new THREE.Vector3().crossVectors(f,ip).normalize():new THREE.Vector3().crossVectors(ip,f).normalize()};};
   function solveArm(a){
     // two-bone IK: shoulder -> elbow -> wrist, the elbow out and down; then the hand flat, fingers to the felt
-    const hd=new THREE.Vector3(a.dir.x,0,a.dir.z).normalize();hd.y=-0.36;hd.normalize();
-    const W=a.target.clone().addScaledVector(hd,-a.HL).add(new THREE.Vector3(0,0.015,0));
-    const S0=wp(a.u);const dirSW=W.clone().sub(S0);let d=dirSW.length();dirSW.normalize();
+    // the hand points away from his shoulder towards where it is going, never back along its path,
+    // so the wrist turns smoothly instead of whipping round when the hand changes direction
+    const S0=wp(a.u);
+    const hd=new THREE.Vector3(a.target.x-S0.x,0,a.target.z-S0.z);
+    if(hd.lengthSq()<1e-4)hd.set(0,0,1);hd.normalize();hd.lerp(new THREE.Vector3(0,0,1),0.35).normalize();hd.y=-0.36;hd.normalize();
+    const W=a.target.clone().addScaledVector(hd,-a.HL).add(new THREE.Vector3(0,0.015,0));const dirSW=W.clone().sub(S0);let d=dirSW.length();dirSW.normalize();
     const reach=(a.L1+a.L2)*0.995;if(d>reach){W.copy(S0).addScaledVector(dirSW,reach);d=reach;}
     d=Math.max(d,Math.abs(a.L1-a.L2)+0.02);
     const ax=(a.L1*a.L1-a.L2*a.L2+d*d)/(2*d),h=Math.sqrt(Math.max(0,a.L1*a.L1-ax*ax));
@@ -337,7 +344,9 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const reduced=()=>(g('reducedMotion')?g('reducedMotion')():false);
   const ease=k=>k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2, easeOut=k=>1-Math.pow(1-k,3);
   const tween=(ms,fn,e=ease)=>new Promise(res=>{if(reduced()||ms<=0){fn(1);res();return;}tweens.add({t0:performance.now(),ms,fn,e,res});});
-  const moveHand=(a,to,ms,dir)=>{const from=a.target.clone();if(dir)a.dir.copy(dir);return tween(ms,k=>a.target.lerpVectors(from,to,k));};
+  // move a hand along a shallow arc, turning it gradually towards its new direction
+  const moveHand=(a,to,ms,dir,lift=0.04)=>{const from=a.target.clone(),d0=a.dir.clone(),d1=dir?dir.clone().normalize():d0.clone();
+    return tween(ms,k=>{a.target.lerpVectors(from,to,k);a.target.y+=Math.sin(Math.PI*k)*lift;a.dir.lerpVectors(d0,d1,k);if(a.dir.lengthSq()<1e-6)a.dir.copy(d1);a.dir.normalize();});};
 
   /* ---------- cards ---------- */
   const cardGeo=new THREE.PlaneGeometry(CW,CH);
@@ -372,17 +381,17 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   async function runDeals(){
     if(dealing)return;dealing=true;
     while(dealQueue.length){
-      const job=dealQueue.shift(),fast=dealQueue.length>0?0.6:1,a=arm.L,m=job.mesh;
+      const job=dealQueue.shift(),fast=dealQueue.length>2?0.8:1,a=arm.L,m=job.mesh;   // an unhurried pace; only a long queue speeds him up a little
       const toShoe=new THREE.Vector3().subVectors(shoeMouth,a.wrist).setY(0).normalize();
-      await moveHand(a,shoeMouth.clone().add(new THREE.Vector3(0,0.03,0)),260*fast,toShoe);
+      await moveHand(a,shoeMouth.clone().add(new THREE.Vector3(0,0.03,0)),380*fast,toShoe,0.05);
       m.visible=true;m.userData.held=true;m.rotation.y=0.75;
       const dir=new THREE.Vector3().subVectors(job.pos,shoeMouth).setY(0).normalize();
-      await moveHand(a,job.pos.clone().add(new THREE.Vector3(0,0.025,0)),380*fast,dir);
+      await moveHand(a,job.pos.clone().add(new THREE.Vector3(0,0.025,0)),520*fast,dir,0.04);
       m.userData.held=false;
       const from=m.position.clone(),yaw0=m.rotation.y;
-      moveHand(a,REST.L,420*fast,new THREE.Vector3(0,0,1));
-      const slide=tween(300*fast,k=>{m.position.lerpVectors(from,job.pos,k);m.rotation.y=yaw0+(job.yaw-yaw0)*k;},easeOut);
-      const turn=job.up?setFace(m,true,300*fast):Promise.resolve();
+      moveHand(a,REST.L,560*fast,new THREE.Vector3(0,0,1),0.03);
+      const slide=tween(340*fast,k=>{m.position.lerpVectors(from,job.pos,k);m.rotation.y=yaw0+(job.yaw-yaw0)*k;},easeOut);
+      const turn=job.up?setFace(m,true,340*fast):Promise.resolve();
       await Promise.all([slide,turn]);
       m.userData.placed=true;m.userData.target=job.pos.clone();m.userData.yaw=job.yaw;
     }
@@ -513,7 +522,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // mirror the game state when it changes
     const sig=JSON.stringify([S.phase,S.bet,S.active,S.dealer&&S.dealer.hole,(S.dealer&&S.dealer.cards||[]).length,(S.hands||[]).map(h=>[h.cards.length,h.bet,h.outcome,h.doubled])]);
     if(sig!==lastSig){lastSig=sig;sync();}
-    mixer.update(0);standUp();body.updateMatrixWorld(true); // re-apply his standing pose, then layer the live motion on top
+    resetPose();                                           // his standing pose, then the live motion on top
     { const a=arm.L,tgt=dealing?a.target:(S.phase==='player'?chipSpot(S.active||0,(S.hands||[]).length||1):(S.phase==='bet'?chipSpot(0,1):null));
       turnHead(tgt,dt,reduced()?0:now); }
     solveArm(arm.R);solveArm(arm.L);
