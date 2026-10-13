@@ -1,0 +1,67 @@
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<script type="module">
+/* ===== 3D dealer: the dealer.glb model replaces the dealer sprite (head and body).
+   The 2D arms still deal the cards, so the model's own arms are hidden.
+   If WebGL or the 3D library is unavailable, the sprite stays. ===== */
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+const DEALER_GLB='__GLB__';
+(async()=>{
+  const host=document.getElementById('bjDealer');if(!host)return;
+  try{
+    const bytes=Uint8Array.from(atob(DEALER_GLB),c=>c.charCodeAt(0));
+    const gltf=await new GLTFLoader().parseAsync(bytes.buffer,'');
+    const root=gltf.scene;
+    for(const n of ['UpperArmL','UpperArmR']){const o=root.getObjectByName(n);if(o)o.visible=false;}
+    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+    renderer.setClearColor(0x000000,0);
+    renderer.outputColorSpace=THREE.SRGBColorSpace;
+    renderer.toneMapping=THREE.ACESFilmicToneMapping;
+    const scene=new THREE.Scene();scene.add(root);
+    scene.add(new THREE.HemisphereLight(0xfff1dc,0x2b3a2f,2.0));
+    const key=new THREE.DirectionalLight(0xfff4e4,2.3);key.position.set(1.2,2.6,3);scene.add(key);
+    const rim=new THREE.DirectionalLight(0x9fb8ff,0.9);rim.position.set(-2,2.2,-1.5);scene.add(rim);
+    // framing matches the sprite it replaces: the same 180 x 194 box, a head-and-shoulders
+    // portrait in his chair at about 380 px per metre, cut off by the table rail below
+    const BOX_W=180,BOX_H=194,TOP=1.815,BOTTOM=TOP-BOX_H/380,DIST=4;
+    const chair=root.getObjectByName('Chair');if(chair)chair.scale.set(.7,1,1);     // fit the chair inside the portrait
+    const cam=new THREE.PerspectiveCamera(2*Math.atan((TOP-BOTTOM)/2/DIST)*180/Math.PI,BOX_W/BOX_H,0.5,10);
+    cam.position.set(0,(TOP+BOTTOM)/2,DIST);cam.lookAt(0,(TOP+BOTTOM)/2,0);
+    const mixer=new THREE.AnimationMixer(root);
+    const clip=n=>THREE.AnimationClip.findByName(gltf.animations,n);
+    const idle=mixer.clipAction(clip('Idle'));idle.play();
+    const nod=mixer.clipAction(clip('Nod'));nod.setLoop(THREE.LoopOnce,1);
+    mixer.addEventListener('finished',e=>{if(e.action===nod){nod.fadeOut(.25);idle.reset().fadeIn(.25).play();}});
+    const head=root.getObjectByName('Head');
+    let lookUntil=0,yaw=0,pitch=0;
+    window.__d3pose=(name,ms)=>{
+      if(name==='dl_aim')lookUntil=performance.now()+(ms||700)+500;
+      if(name==='dl_complete'){idle.fadeOut(.2);nod.reset().fadeIn(.2).play();}
+    };
+    host.appendChild(renderer.domElement);
+    window.__d3=true;host.classList.add('d3');
+    const reduced=()=>window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const eul=new THREE.Euler(),q=new THREE.Quaternion();
+    let last=performance.now(),pw=0,ph=0;
+    renderer.setAnimationLoop(()=>{
+      const now=performance.now(),dt=Math.min(.1,(now-last)/1000);last=now;
+      const r=host.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1);
+      const w=Math.max(1,Math.round(r.width*dpr)),h=Math.max(1,Math.round(r.height*dpr));
+      if(w!==pw||h!==ph){renderer.setSize(w,h,false);pw=w;ph=h;}
+      mixer.update(reduced()?0:dt);
+      // while a card is in flight, his eyes follow the dealing hand
+      let ty=0,tp=0;
+      try{
+        if(now<lookUntil&&typeof ARM!=='undefined'&&typeof TBL!=='undefined'){
+          const W=TBL[curOrient].W;
+          ty=Math.max(-.7,Math.min(.7,(ARM.R.x-W/2)/(W/2)*.75));
+          tp=Math.max(0,Math.min(.35,(ARM.R.y-60)/900));
+        }
+      }catch(e){}
+      const k=1-Math.exp(-dt*8);yaw+=(ty-yaw)*k;pitch+=(tp-pitch)*k;
+      if(head&&(Math.abs(yaw)>.002||pitch>.002)){eul.set(pitch,yaw,0);head.quaternion.multiply(q.setFromEuler(eul));}
+      renderer.render(scene,cam);
+    });
+  }catch(err){console.warn('3D dealer unavailable, using the sprite',err);}
+})();
+</script>
