@@ -2,7 +2,7 @@
 
 ## `blackjack-table3d.html` (current)
 
-Turns the BlackJack artifact into a full 3D table: casino carpet, blue felt with the printed arcs and betting circles, a leather and burl-wood rail with gold cup holders, a chip rack, an acrylic shoe, a discard holder, a limits placard and leather chairs. The dealer is the rigged character in `assets/dealer-realistic.glb` (see `assets/CREDITS.md`; the page shows the required CC BY credit). He stands behind the table, and his real arm bones are driven by two-bone IK: he deals every card with his left hand from the shoe, and his head follows the play.
+Turns the BlackJack artifact into a full 3D table: casino carpet, blue felt with the printed arcs and betting circles, a leather and burl-wood rail with gold cup holders, a chip rack, an acrylic shoe, a discard holder, a limits placard and leather chairs. The dealer is the woman in `assets/dealer-woman.glb`, a static model rigged here by `tools/rig/rig.mjs` (see `assets/CREDITS.md`; the page shows the required CC BY credit). He stands behind the table, and his real arm bones are driven by two-bone IK: he deals every card with his left hand from the shoe, and his head follows the play.
 
 ![3D table](../assets/table3d-preview.png)
 
@@ -20,7 +20,7 @@ The table is built in code: a smooth semicircle with a padded black leather rail
 - Cards are unlit and pure white, fanned in a row with large corner indices, with round total badges and WON / LOST / BUST tags.
 - The table is sized so the dealer can reach your spot.
 
-To install it, paste the snippet before `</body>` and publish `dealer-model.js` and `chips-model.js` next to the page (each is `export default "<base64 of the .glb>";`). That file is `export default "<base64 of assets/dealer-realistic.glb>";`; it is a script because artifacts don't serve `.glb` files.
+To install it, paste the snippet before `</body>` and publish `dealer-woman-model.js` and `chips-model.js` next to the page (each is `export default "<base64 of the .glb>";`). That file is `export default "<base64 of assets/dealer-woman.glb>";`; it is a script because artifacts don't serve `.glb` files.
 
 The camera button cycles through four views: high over the felt so the cards read from above (the default), your seat, and the two side seats.
 

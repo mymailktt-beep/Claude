@@ -11,18 +11,15 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 
-const DEALER_URL='./dealer-model.js';                 // the dealer GLB, published next to this page as a script
+const DEALER_URL='./dealer-woman-model.js';                 // the dealer GLB, published next to this page as a script
 const CHIPS_URL='./chips-model.js';                   // the chips & cards model (chip shape, card back)
-// The table model is scaled 33.2x to real size; its long straight dealer section is shortened to D so the
-// dealer stands close to the players, as at a real blackjack table.
-// The table model is scaled to real height (KY) but narrower across (KXZ), and its long straight dealer section
-// is shortened to D, so the dealer can lean in and reach your spot, as in the reference video. Chairs keep full size.
 // An original semicircle blackjack table, sized so the dealer can reach your spot: a short straight dealer
 // section of depth D, then a semicircle of radius R. Padded leather rail, burl-wood trim, brass cup holders.
 const TABLE_D=0.12, TABLE_Y=0.96, EDGE_Z=0.22, R=0.78, FELT_HW=R;   // felt height, arc centre, arc radius, half width (m)
 const CARD_S=2.0, CW=0.0635*CARD_S, CH=0.0889*CARD_S;   // cards a little larger than life so they read on a phone
 const CHIP_R=0.021*1.1, CHIP_H=0.0065*1.1;
-const DEALER_Z=EDGE_Z-TABLE_D-0.09;                      // he stands against the dealer's edge of the table
+const DEALER_Z=EDGE_Z-TABLE_D-0.09;                      // she stands against the dealer's edge of the table
+const SEAT_DEG=62, SEAT_A=SEAT_DEG*Math.PI/180;              // your seat: second from the dealer's left, as in the reference video
 const SEAT_R=0.47;                                        // betting circles' distance from the arc centre
 const GLOBALS={addChip:()=>addChip,SC:()=>SC,chipLabel:()=>chipLabel,MIN_BET:()=>MIN_BET,fmt:()=>fmt,reducedMotion:()=>reducedMotion,handValue:()=>handValue};
 const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // the game's globals, if present
@@ -44,7 +41,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   scene.fog=new THREE.Fog(0x0a1424,3.5,9);
 
   const std=(o)=>new THREE.MeshStandardMaterial(o), std0=std;
-  /* ---------- models: the table, the chips and cards, the dealer ---------- */
+  /* ---------- models: the chips and cards, the dealer ---------- */
   const loadModule=async url=>{const b64=(await import(url)).default;const buf=Uint8Array.from(atob(b64),c=>c.charCodeAt(0)).buffer;return new GLTFLoader().parseAsync(buf,'');};
   const chipsGltf=await loadModule(CHIPS_URL);
   const findMat=(root,name)=>{let m=null;root.traverse(o=>{if(!m&&o.isMesh&&o.material&&o.material.name===name)m=o.material;});return m;};
@@ -116,7 +113,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // betting circles; the centre one is yours
     [34,62,90,118,146].forEach(deg=>{const a=deg*Math.PI/180,x=cx+SEAT_R*PX*Math.cos(a),y=cy+SEAT_R*PX*Math.sin(a);
       c.save();c.translate(x,y);
-      if(deg===90){c.shadowColor='rgba(170,230,255,.95)';c.shadowBlur=26;c.lineWidth=10;c.strokeStyle='rgba(225,247,255,.95)';}
+      if(deg===SEAT_DEG){c.shadowColor='rgba(170,230,255,.95)';c.shadowBlur=26;c.lineWidth=10;c.strokeStyle='rgba(225,247,255,.95)';}
       else{c.lineWidth=6;c.strokeStyle='rgba(215,240,255,.55)';}
       c.beginPath();c.ellipse(0,0,0.07*PX,0.07*PX,0,0,7);c.stroke();c.restore();});
   }));
@@ -163,7 +160,8 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
 
   // chips: the chip from the chips model (coloured body + white inserts), one colour per denomination,
   // matching the chip buttons below the table
-  const CHIP_COL={5:'#cf3a34',25:'#2f9a5a',100:'#2a2a33',500:'#7b3fb5'};
+  const CHIP_COL={5:'#d8322c',25:'#25a24d',100:'#2672d8',500:'#ee8a1c',1000:'#8a3fc8'};
+  const CHIP_VALS=[5,25,100,500,1000];
   const SCv=g('SC')||1;
   const toFloat=geo=>{for(const n in geo.attributes){const a=geo.attributes[n];if(a.isInterleavedBufferAttribute||!(a.array instanceof Float32Array)||a.normalized){
       const f=new Float32Array(a.count*a.itemSize);for(let i=0;i<a.count;i++)for(let k=0;k<a.itemSize;k++)f[i*a.itemSize+k]=[a.getX,a.getY,a.getZ,a.getW][k].call(a,i);
@@ -179,10 +177,24 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     chipParts=parts;});
   const chipInsertMat=std0({color:0xf4f1e8,roughness:.55});
   const chipBodyMat={};for(const v in CHIP_COL)chipBodyMat[v]=std0({color:CHIP_COL[v],roughness:.5});
-  function chipMesh(v){const grp=new THREE.Group();
-    if(chipParts){const b=new THREE.Mesh(chipParts[0],chipBodyMat[v]),i=new THREE.Mesh(chipParts[1],chipInsertMat);grp.add(b,i);}
-    else grp.add(new THREE.Mesh(new THREE.CylinderGeometry(1,1,1,32),chipBodyMat[v]));
-    grp.scale.set(CHIP_R,CHIP_H,CHIP_R);grp.traverse(o=>{if(o.isMesh){o.castShadow=o.receiveShadow=true;}});return grp;}
+  const chipFace={},chipEdge={};
+  const fmtChip=v=>{const f=g('chipLabel');return f?f(v*SCv):String(v*SCv);};
+  for(const v of CHIP_VALS){const col=CHIP_COL[v];
+    chipFace[v]=tex(canvas(256,256,(c,w,h)=>{const r=w/2;c.translate(r,r);
+      c.fillStyle=col;c.beginPath();c.arc(0,0,r,0,7);c.fill();
+      c.fillStyle='#fff';for(let k=0;k<8;k++){c.save();c.rotate(k*Math.PI/4);c.fillRect(-r*.13,-r,r*.26,r*.24);c.restore();}   // edge spots
+      c.strokeStyle='rgba(255,255,255,.9)';c.lineWidth=r*.05;c.setLineDash([r*.09,r*.06]);c.beginPath();c.arc(0,0,r*.68,0,7);c.stroke();c.setLineDash([]);
+      const gr=c.createRadialGradient(0,-r*.2,r*.1,0,0,r*.62);gr.addColorStop(0,'rgba(255,255,255,.25)');gr.addColorStop(1,'rgba(0,0,0,.12)');
+      c.fillStyle=gr;c.beginPath();c.arc(0,0,r*.6,0,7);c.fill();
+      const t=fmtChip(v);c.font=`800 ${t.length>3?r*.42:r*.56}px Arial, Helvetica, sans-serif`;c.textAlign='center';c.textBaseline='middle';
+      c.lineWidth=r*.07;c.strokeStyle='rgba(0,0,0,.45)';c.strokeText(t,0,r*.03);c.fillStyle='#fff';c.fillText(t,0,r*.03);}));
+    chipEdge[v]=tex(canvas(256,16,(c,w,h)=>{c.fillStyle=col;c.fillRect(0,0,w,h);c.fillStyle='#fff';for(let k=0;k<8;k++)c.fillRect(k*w/8+w/32,0,w/16,h);}),{wrapS:THREE.RepeatWrapping});}
+  const chipGeo=new THREE.CylinderGeometry(1,1,1,40);
+  const chipMats={};
+  const chipMatFor=v=>chipMats[v]||(chipMats[v]=[std0({map:chipEdge[v],roughness:.45}),std0({map:chipFace[v],roughness:.4}),std0({map:chipFace[v],roughness:.4})]);
+  function chipMesh(v,r=CHIP_R,h=CHIP_H){if(!chipFace[v])v=CHIP_VALS.reduce((b,x)=>x<=v?x:b,5);
+    const m=new THREE.Mesh(chipGeo,chipMatFor(v));m.scale.set(r,h,r);m.castShadow=m.receiveShadow=true;
+    const grp=new THREE.Group();grp.add(m);return grp;}
 
   /* ---------- the room ---------- */
   const floor=new THREE.Mesh(new THREE.PlaneGeometry(30,30),std({map:carpetTex,roughness:.95}));
@@ -278,7 +290,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       leg.position.x=Math.sin(k*Math.PI*2/5)*0.14;leg.position.z=Math.cos(k*Math.PI*2/5)*0.14;foot.add(leg);}
     for(const m of[seat,back,armL,armR,post])m.castShadow=true;ch.add(seat,back,armL,armR,post,foot);
     scene.add(ch);};
-  [22,52,128,158].forEach(d=>chair(d));
+  [22,62,104,142].forEach(d=>chair(d));
   // the shoe (viewer's right) and the discard holder (viewer's left)
   const acrylic=std({color:0xdfe9f2,transparent:true,opacity:.22,roughness:.05,metalness:.1,depthWrite:false});
   const SHOE_POS=new THREE.Vector3(0.5,TABLE_Y,EDGE_Z-0.0), DISCARD_POS=new THREE.Vector3(-0.5,TABLE_Y,EDGE_Z-0.02);
@@ -304,15 +316,15 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     for(const s of[1,-1]){const p=new THREE.Mesh(new THREE.PlaneGeometry(0.16,0.1),std({map:plTex,side:THREE.DoubleSide,roughness:.6}));
       p.position.set(0,0.045,s*0.02);p.rotation.set(s*-0.42,s>0?0:Math.PI,0);p.castShadow=true;pl.add(p);}
   }
-  /* ---------- the dealer: a rigged character, his arms driven by IK ---------- */
+  /* ---------- the dealer: a rigged character, her arms driven by IK ---------- */
   const glbBuf=Uint8Array.from(atob((await import(DEALER_URL)).default),c=>c.charCodeAt(0)).buffer;
   const gltf=await new GLTFLoader().parseAsync(glbBuf,'');
   const dealer=new THREE.Group();dealer.position.set(0,0,DEALER_Z);scene.add(dealer);
   const body=gltf.scene;dealer.add(body);
-  body.scale.setScalar(1/1.83);                            // the export is 1.83x life size; this makes him about 1.8 m
+  body.scale.setScalar(0.92);                              // the model is 1.88 m to the top of her hair; this makes her about 1.73 m
   body.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;}});
   // his built-in pose has a casual head tilt; the spine, neck and head stand upright instead (their bind pose)
-  const UPRIGHT=['Hips_01','Spine_02','Spine1_03','Spine2_04','Neck_05','Neck1_06','Neck2_07','Head_08'].map(n=>body.getObjectByName(n)).filter(Boolean).map(b=>[b,b.quaternion.clone()]);
+  const UPRIGHT=['Hips','Spine','Spine1','Spine2','Neck','Head'].map(n=>body.getObjectByName(n)).filter(Boolean).map(b=>[b,b.quaternion.clone()]);
   const standUp=()=>{for(const[b,q]of UPRIGHT)b.quaternion.copy(q);};
   const mixer=new THREE.AnimationMixer(body);
   if(gltf.animations[0])mixer.clipAction(gltf.animations[0]).play();   // his relaxed standing pose
@@ -322,11 +334,11 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const POSE=[];body.traverse(o=>{if(o.isBone)POSE.push([o,o.quaternion.clone(),o.position.clone()]);});
   const resetPose=()=>{for(const[b,q,p]of POSE){b.quaternion.copy(q);b.position.copy(p);}body.updateMatrixWorld(true);};
   const bone=n=>body.getObjectByName(n);
-  const headB=bone('Head_08'),neckB=bone('Neck_05'),chestB=bone('Spine2_04'),spineB=bone('Spine_02'),spine1B=bone('Spine1_03');
-  const fingerBones=(side,f)=>[1,2,3].map(k=>{let b=null;body.traverse(o=>{if(!b&&o.isBone&&o.name.startsWith(side+'Hand'+f+k+'_'))b=o;});return b;}).filter(Boolean);
+  const headB=bone('Head'),neckB=bone('Neck'),chestB=bone('Spine2'),spineB=bone('Spine'),spine1B=bone('Spine1');
+  const fingerBones=(side,f)=>[1,2,3].map(k=>{let b=null;body.traverse(o=>{if(!b&&o.isBone&&o.name===side+'Hand'+f+k)b=o;});return b;}).filter(Boolean);
   const wp=(o,v=new THREE.Vector3())=>o.getWorldPosition(v);
-  const NAMES={L:['LeftArm_013','LeftForeArm_014','LeftHand_017','LeftHandMiddle1_026','LeftHandIndex1_022','LeftHandPinky1_034'],
-               R:['RightArm_039','RightForeArm_040','RightHand_043','RightHandMiddle1_00','RightHandIndex1_048','RightHandPinky1_059']};
+  const NAMES={L:['LeftArm','LeftForeArm','LeftHand','LeftHandMiddle1','LeftHandIndex1','LeftHandPinky1'],
+               R:['RightArm','RightForeArm','RightHand','RightHandMiddle1','RightHandIndex1','RightHandPinky1']};
   const arm={};
   for(const s of['L','R']){const[u,f,h,m,i,p]=NAMES[s].map(bone);
     const P=s==='L'?'Left':'Right';
@@ -334,8 +346,8 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       L1:wp(u).distanceTo(wp(f)),L2:wp(f).distanceTo(wp(h)),HL:wp(h).distanceTo(wp(m))+0.05,
       fingers:{index:fingerBones(P,'Index'),thumb:fingerBones(P,'Thumb'),others:['Middle','Ring','Pinky'].map(n=>fingerBones(P,n))},
       shoulder0:wp(u),busy:0,point:0,down:0};}
-  // resting: fingertips on the felt either side of the chip tray
-  const REST={L:new THREE.Vector3(0.3,TABLE_Y+0.012,EDGE_Z-0.02),R:new THREE.Vector3(-0.3,TABLE_Y+0.012,EDGE_Z-0.02)};
+  // resting: hands flat on the felt either side of the chip rack, as in the video
+  const REST={L:new THREE.Vector3(0.37,TABLE_Y+0.012,EDGE_Z+0.03),R:new THREE.Vector3(-0.37,TABLE_Y+0.012,EDGE_Z+0.03)};
   for(const s of['R','L'])arm[s].target.copy(REST[s]);
   const _q=new THREE.Quaternion(),_qa=new THREE.Quaternion(),_qb=new THREE.Quaternion(),_pq=new THREE.Quaternion(),_a=new THREE.Vector3(),_b=new THREE.Vector3();
   const UP=new THREE.Vector3(0,1,0),DOWN=new THREE.Vector3(0,-1,0);
@@ -446,8 +458,8 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   let cardSeq=0;const meshes=new Map();   // key -> mesh
   const keyOf=(c)=>{if(c.__w3d==null)Object.defineProperty(c,'__w3d',{value:++cardSeq,enumerable:false,writable:true});return c.__w3d;};
   const FAN=CW*0.32;                                      // each card shows a strip of the one under it
-  function handSpot(i,n){const a=Math.PI/2-((n-1)/2-i)*0.36;return arcPt(SEAT_R-0.115,a,TABLE_Y);}
-  function chipSpot(i,n){const a=Math.PI/2-((n-1)/2-i)*0.36;return arcPt(SEAT_R,a,TABLE_Y);}
+  function handSpot(i,n){const a=SEAT_A-((n-1)/2-i)*0.36;return arcPt(SEAT_R-0.115,a,TABLE_Y);}
+  function chipSpot(i,n){const a=SEAT_A-((n-1)/2-i)*0.36;return arcPt(SEAT_R,a,TABLE_Y);}
   function layout(){
     // where every visible card should be, from the game state
     const out=[];
@@ -469,7 +481,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       await moveHand(a,shoeMouth.clone().add(new THREE.Vector3(0,0.03,0)),300*fast,toShoe,0.05);
       m.visible=true;m.userData.held=a;m.rotation.y=0.75;
       const dir=new THREE.Vector3().subVectors(job.pos,shoeMouth).setY(0).normalize();
-      await moveHand(a,job.pos.clone().add(new THREE.Vector3(0,0.025,0)),460*fast,dir,0.04);
+      await moveHand(a,job.pos.clone().add(new THREE.Vector3(0,0.012,0)),620*fast,dir,0.006);
       m.userData.held=null;
       const from=m.position.clone(),yaw0=m.rotation.y;
       moveHand(a,REST.L,560*fast,new THREE.Vector3(0,0,1),0.03);
@@ -526,7 +538,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
 
   /* ---------- chips on the betting circles ---------- */
   const stacks=new Map();
-  const RACK_POS=new THREE.Vector3(0,TABLE_Y+0.04,EDGE_Z-TABLE_D+0.1), PLAYER_POS=new THREE.Vector3(0,TABLE_Y+0.04,EDGE_Z+R+0.3);
+  const RACK_POS=new THREE.Vector3(0,TABLE_Y+0.04,EDGE_Z-TABLE_D+0.1), PLAYER_POS=arcPt(R+0.3,SEAT_A,TABLE_Y+0.04);
   const chipJobs=[];let chipping=false;
   async function runChips(){
     if(chipping)return;chipping=true;
@@ -549,7 +561,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   }
   function buildStack(amount){
     const grp=new THREE.Group();let left=Math.round(amount/SCv),n=0;
-    for(const v of[500,100,25,5]){while(left>=v&&n<24){const c=chipMesh(v);c.position.y=CHIP_H*(n+.5);c.rotation.y=rng()*6;
+    for(const v of[1000,500,100,25,5]){while(left>=v&&n<24){const c=chipMesh(v);c.position.y=CHIP_H*(n+.5);c.rotation.y=rng()*6;
       c.position.x=(rng()-.5)*0.002;c.position.z=(rng()-.5)*0.002;grp.add(c);left-=v;n++;}}
     grp.userData={};scene.add(grp);return grp;}
   function syncChips(){
@@ -578,7 +590,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   // the dealer model is CC BY 4.0, which asks for this credit
   const credit=document.createElement('div');credit.id='w3dCredit';
   const cc='<a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>';
-  credit.innerHTML='3D models: <a href="https://sketchfab.com/3d-models/indian-man-in-suit-985dd9756d89464b9380414b5b12d8aa" target="_blank" rel="noopener">“Indian Man in suit”</a> by Pixel_Monster, '+
+  credit.innerHTML='3D models: <a href="https://sketchfab.com/3d-models/woman-dress-2-750b068dfbcf4a27932ea3d3f742ab9b" target="_blank" rel="noopener">“Woman Dress 2”</a> by Ali Şahan Yalçın (rigged and restyled as a dealer), '+
     '<a href="https://sketchfab.com/3d-models/low-poly-poker-chips-cards-8420090cc79a49d9a0b85f53c5074616" target="_blank" rel="noopener">“Low Poly Poker Chips &amp; Cards”</a> by Designed By Jonathan; all '+cc+', modified';
   const lab={};
   const getLab=(k)=>{if(!lab[k]){const d=document.createElement('div');d.className='w3l';labels.appendChild(d);lab[k]=d;}return lab[k];};
@@ -612,25 +624,44 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
 
   /* ---------- your chips: on the felt in front of your seat; tap one to add it to your bet ---------- */
   const selector=[],raycaster=new THREE.Raycaster(),ptr=new THREE.Vector2();
-  const CHIPV=(typeof CHIPS!=='undefined'?CHIPS:[5,25,100,500]);
+  const CHIPV=CHIP_VALS;
   let selected=null;
-  const glow=new THREE.Mesh(new THREE.RingGeometry(CHIP_R*1.05,CHIP_R*1.5,40),new THREE.MeshBasicMaterial({color:0xffe08a,transparent:true,opacity:.85,depthWrite:false,toneMapped:false}));
+  const glow=new THREE.Mesh(new THREE.RingGeometry(0.041*1.06,0.041*1.4,48),new THREE.MeshBasicMaterial({color:0xffe08a,transparent:true,opacity:.85,depthWrite:false,toneMapped:false}));
   glow.rotation.x=-Math.PI/2;glow.visible=false;scene.add(glow);
+  const SEL_R=0.041,SEL_H=0.01;
+  const hitGeo=new THREE.CylinderGeometry(SEL_R*1.45,SEL_R*1.45,0.05,16),hitMat=new THREE.MeshBasicMaterial({visible:false});
   CHIPV.forEach((v,i)=>{
-    const grp=new THREE.Group();const n=3;
-    for(let k=0;k<n;k++){const c=chipMesh(v);c.position.y=CHIP_H*(k+.5);c.rotation.y=k*1.3;grp.add(c);}
-    const lab=tex(canvas(128,128,(c,w,h)=>{c.fillStyle='rgba(0,0,0,0)';c.clearRect(0,0,w,h);c.fillStyle='#fff';c.font='700 46px Arial, Helvetica, sans-serif';
-      c.textAlign='center';c.textBaseline='middle';const f=g('chipLabel');c.fillText(f?f(v*SCv):String(v*SCv),64,68);}));
-    const top=new THREE.Mesh(new THREE.CircleGeometry(CHIP_R*0.62,32),new THREE.MeshBasicMaterial({map:lab,transparent:true,depthWrite:false,toneMapped:false}));
-    top.rotation.x=-Math.PI/2;top.position.y=CHIP_H*n+0.0006;grp.add(top);
-    const a=Math.PI/2-(i-(CHIPV.length-1)/2)*0.2;
-    grp.position.copy(arcPt(R-0.075,a,TABLE_Y+0.0005));grp.userData={v};scene.add(grp);selector.push(grp);
+    const grp=new THREE.Group();const c=chipMesh(v,SEL_R,SEL_H);c.position.y=SEL_H/2;grp.add(c);
+    const hit=new THREE.Mesh(hitGeo,hitMat);hit.position.y=0.02;grp.add(hit);            // a generous tap target
+    const a=SEAT_A-(i-(CHIPV.length-1)/2)*0.125;
+    grp.position.copy(arcPt(R-0.065,a,TABLE_Y+0.0005));grp.rotation.y=Math.PI/2-a;grp.userData={v,chip:c};scene.add(grp);selector.push(grp);
   });
+  // your betting circle glows while bets are open
+  const betGlow=new THREE.Mesh(new THREE.RingGeometry(0.066,0.082,64),new THREE.MeshBasicMaterial({color:0x8fdcff,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+  betGlow.rotation.x=-Math.PI/2;scene.add(betGlow);
+  // a chip you tap flies to the circle, trailing sparkles
+  const sparkGeo=new THREE.BufferGeometry();const SPN=60,spPos=new Float32Array(SPN*3),spLife=new Float32Array(SPN);sparkGeo.setAttribute('position',new THREE.BufferAttribute(spPos,3));
+  const sparkDot=tex(canvas(32,32,(c,w)=>{const gr=c.createRadialGradient(16,16,0,16,16,16);gr.addColorStop(0,'rgba(255,255,255,1)');gr.addColorStop(.35,'rgba(140,220,255,.9)');gr.addColorStop(1,'rgba(0,120,255,0)');c.fillStyle=gr;c.fillRect(0,0,32,32);}));
+  const sparks=new THREE.Points(sparkGeo,new THREE.PointsMaterial({map:sparkDot,size:0.02,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+  sparks.frustumCulled=false;scene.add(sparks);let spNext=0;spPos.fill(-99);
+  const emitSpark=p=>{const i=spNext++%SPN;spPos[i*3]=p.x+(Math.random()-.5)*0.02;spPos[i*3+1]=p.y+Math.random()*0.01;spPos[i*3+2]=p.z+(Math.random()-.5)*0.02;spLife[i]=1;};
+  function updateSparks(dt){for(let i=0;i<SPN;i++){if(spLife[i]<=0)continue;spLife[i]-=dt*1.6;spPos[i*3+1]+=dt*0.03;if(spLife[i]<=0)spPos[i*3+1]=-99;}sparkGeo.attributes.position.needsUpdate=true;}
+  let flying=0;
+  function flyChip3d(v,from){
+    const to=chipSpot(0,1).setY(TABLE_Y+0.02),fly=chipMesh(v,CHIP_R,CHIP_H);fly.position.copy(from);scene.add(fly);flying++;
+    return tween(reduced()?0:420,k=>{fly.position.lerpVectors(from,to,k);fly.position.y+=Math.sin(Math.PI*k)*0.06;fly.rotation.y=k*6;emitSpark(fly.position);},easeOut)
+      .then(()=>{scene.remove(fly);flying--;});
+  }
   function updateSelector(now){
     const bet=S.phase==='bet';
-    for(const c of selector){const ok=bet&&c.userData.v*SCv<=S.bankroll;c.position.y=TABLE_Y+0.0005+(ok&&c===selected?0.004:0);}
+    for(const c of selector){const ok=bet&&c.userData.v*SCv<=S.bankroll;
+      c.visible=bet;c.position.y=TABLE_Y+0.0005+(ok&&c===selected?0.006:0);
+      for(const m of c.userData.chip.children[0].material)m.color.setScalar(ok?1:0.45);}
     if(selected&&bet){glow.visible=true;glow.position.copy(selected.position).setY(TABLE_Y+0.0012);glow.material.opacity=.55+.3*Math.sin(now/220);}else glow.visible=false;
+    betGlow.position.copy(chipSpot(0,1)).setY(TABLE_Y+0.0013);betGlow.material.opacity=bet?0.45+0.35*Math.sin(now/300):0;
+    const h0=stacks.get('h0');if(h0&&bet)h0.visible=flying===0;
   }
+
   cv.addEventListener('pointerdown',e=>{
     if(S.phase!=='bet')return;
     ptr.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);raycaster.setFromCamera(ptr,cam);
@@ -638,14 +669,14 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     let o=hit.object;while(o&&!selector.includes(o))o=o.parent;if(!o)return;
     const add=g('addChip')||(typeof addChip==='function'?addChip:null);
     if(o.userData.v*SCv>S.bankroll)return;
-    selected=o;if(add)add(o.userData.v*SCv);
+    selected=o;flyChip3d(o.userData.v,o.position.clone().setY(TABLE_Y+0.012));if(add)add(o.userData.v*SCv);
   });
 
   /* ---------- camera: your seat, plus the two side views ---------- */
   const cam=new THREE.PerspectiveCamera(48,1,0.05,40);
-  const VIEWS=[{a:100,r:1.72,y:2.42,ly:TABLE_Y-0.02,lz:EDGE_Z+0.12},{a:90,r:1.5,y:1.62,ly:TABLE_Y+0.2,lz:EDGE_Z+0.05},
+  const VIEWS=[{a:SEAT_DEG-6,r:1.78,y:2.4,lx:0.08,ly:TABLE_Y-0.02,lz:EDGE_Z+0.16},{a:90,r:1.5,y:1.62,ly:TABLE_Y+0.2,lz:EDGE_Z+0.05},
                {a:135,r:1.6,y:1.95,ly:TABLE_Y+0.05,lz:EDGE_Z+0.2},{a:45,r:1.6,y:1.95,ly:TABLE_Y+0.05,lz:EDGE_Z+0.2}];
-  const LOOK=new THREE.Vector3(0,VIEWS[0].ly,VIEWS[0].lz),lookWant=new THREE.Vector3();
+  const LOOK=new THREE.Vector3(VIEWS[0].lx||0,VIEWS[0].ly,VIEWS[0].lz),lookWant=new THREE.Vector3();
   let view=0;const camPos=new THREE.Vector3(),camWant=new THREE.Vector3();
   function viewPos(v,out){const V=VIEWS[v],a=V.a*Math.PI/180;return out.set(V.r*Math.cos(a),V.y,EDGE_Z+V.r*Math.sin(a));}
   viewPos(0,camPos);
@@ -695,10 +726,10 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // whatever a hand is holding follows it
     for(const m of meshes.values())if(m.userData.held){gripPoint(m.userData.held,m.position);m.position.y=Math.max(m.position.y+(m.userData.heldOff||0),TABLE_Y+0.004);}
     for(const st of stacks.values())if(st.userData.held){gripPoint(st.userData.held,st.position);st.position.y=Math.max(st.position.y-0.02,TABLE_Y+0.001);}
-    updateSelector(now);
+    updateSelector(now);updateSparks(dt);
     const hs=S.hands||[];
     if(S.phase==='player'&&hs.length>1){activeRing.visible=true;activeRing.position.copy(chipSpot(S.active,hs.length)).setY(TABLE_Y+0.0015);}else activeRing.visible=false;
-    lookWant.set(0,VIEWS[view].ly,VIEWS[view].lz);LOOK.lerp(lookWant,1-Math.exp(-dt*3));
+    lookWant.set(VIEWS[view].lx||0,VIEWS[view].ly,VIEWS[view].lz);LOOK.lerp(lookWant,1-Math.exp(-dt*3));
     viewPos(view,camWant);camWant.sub(lookWant).multiplyScalar(cam.userData.dist||1).add(lookWant);
     camPos.lerp(camWant,1-Math.exp(-dt*3));cam.position.copy(camPos);cam.lookAt(LOOK);
     renderer.render(scene,cam);
