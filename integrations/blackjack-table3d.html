@@ -467,8 +467,8 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   let cardSeq=0;const meshes=new Map();   // key -> mesh
   const keyOf=(c)=>{if(c.__w3d==null)Object.defineProperty(c,'__w3d',{value:++cardSeq,enumerable:false,writable:true});return c.__w3d;};
   const FAN=CW*0.32;                                      // each card shows a strip of the one under it
-  function handSpot(i,n){const a=SEAT_A-((n-1)/2-i)*0.36;return arcPt(SEAT_R-0.115,a,TABLE_Y);}
-  function chipSpot(i,n){const a=SEAT_A-((n-1)/2-i)*0.36;return arcPt(SEAT_R,a,TABLE_Y);}
+  function handSpot(i,n){const a=SEAT_A-((n-1)/2-i)*0.44;return arcPt(SEAT_R-0.115,a,TABLE_Y);}
+  function chipSpot(i,n){const a=SEAT_A-((n-1)/2-i)*0.44;return arcPt(SEAT_R,a,TABLE_Y);}
   function layout(){
     // where every visible card should be, from the game state
     const out=[];
@@ -688,7 +688,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const lookOf=(V,out)=>V.look?out.set(...V.look):out.set(V.lx||0,V.ly,V.lz);
   const LOOK=lookOf(VIEWS[0],new THREE.Vector3()),lookWant=new THREE.Vector3();
   let view=0;const camPos=new THREE.Vector3(),camWant=new THREE.Vector3();
-  function viewPos(v,out){const V=VIEWS[v],a=V.a*Math.PI/180;if(V.pos)return out.set(...V.pos);return out.set(V.r*Math.cos(a),V.y,EDGE_Z+V.r*Math.sin(a));}
+  const _lk=new THREE.Vector3();
+  function viewPos(v,out){const V=VIEWS[v],a=V.a*Math.PI/180;
+    if(V.pos){out.set(...V.pos);if(cam.aspect<0.9){   // a tall phone screen: the same view from higher up, so the table fills the height
+        lookOf(V,_lk);const d=out.distanceTo(_lk),hz=new THREE.Vector3(out.x-_lk.x,0,out.z-_lk.z).normalize(),el=62*Math.PI/180;
+        out.copy(_lk).addScaledVector(hz,Math.cos(el)*d*0.9).add(new THREE.Vector3(0,Math.sin(el)*d*0.9,0));}
+      return out;}return out.set(V.r*Math.cos(a),V.y,EDGE_Z+V.r*Math.sin(a));}
   viewPos(0,camPos);
   function fitCamera(){
     // the video's lens on a 4:3 screen; narrower screens keep the same width of table and see more above and below
@@ -705,6 +710,72 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   viewBtn.innerHTML='<svg viewBox="0 0 24 24" width="60%" height="60%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="4"/></svg>';
   viewBtn.onclick=()=>{view=(view+1)%VIEWS.length;fitCamera();};
   const menu=document.getElementById('menuBtn');if(menu&&menu.parentNode)menu.parentNode.insertBefore(viewBtn,menu);
+  /* ---------- the action bar, laid out as in the reference video ----------
+     four fixed keys that change with the phase (unavailable ones dim, never move), and four options under them:
+       betting    DOUBLE · CLEAR · REPEAT · DEAL
+       insurance  UNDO · NO · YES · DOUBLE
+       your turn  SPLIT · STAND · HIT · DOUBLE
+       options    AUTOSPLIT · AUTOINSURANCE · AUTOBET · ZOOM */
+  const E=name=>{try{return ({nextRound,rebet,clearBet,startHand,dealSameBet,chooseInsurance,playerHit,playerStand,playerDouble,playerSplit,
+    canSplitNow,canDoubleNow,curHand,recommend,persist,render,resetBankroll})[name];}catch(e){return null;}};
+  const call=(name,...a)=>{const f=E(name);if(f)return f(...a);};
+  const OPT_KEY='bj3d.options';let opts={autosplit:false,autoinsurance:false,zoom:false};
+  try{Object.assign(opts,JSON.parse(localStorage.getItem(OPT_KEY)||'{}'));}catch(e){}
+  const saveOpts=()=>{try{localStorage.setItem(OPT_KEY,JSON.stringify(opts));}catch(e){}};
+  const bar=document.createElement('div');bar.id='bjBar';
+  bar.innerHTML='<div class="keys">'+[0,1,2,3].map(i=>'<button type="button" class="key" data-k="'+i+'"></button>').join('')+'</div>'+
+    '<div class="opts">'+[['autosplit','Autosplit'],['autoinsurance','Autoinsurance'],['autobet','Autobet'],['zoom','Zoom']].map(([k,l])=>
+      '<label class="opt"><input type="checkbox" data-o="'+k+'"><span class="box"></span><span>'+l+'</span></label>').join('')+'</div>';
+  wrap.appendChild(bar);
+  { const gr=document.getElementById('grade');if(gr)wrap.appendChild(gr); }   // the coaching line sits just above the bar, full size
+  const keys=[...bar.querySelectorAll('.key')],keyFn=[null,null,null,null];
+  keys.forEach((b,i)=>b.addEventListener('click',()=>{if(!b.disabled&&keyFn[i])keyFn[i]();}));
+  const optBox=k=>bar.querySelector('[data-o="'+k+'"]');
+  for(const k of['autosplit','autoinsurance','zoom'])optBox(k).checked=!!opts[k];
+  optBox('autobet').checked=!!S.autoBet;
+  bar.addEventListener('change',e=>{const k=e.target.dataset.o;if(!k)return;
+    if(k==='autobet'){S.autoBet=e.target.checked;call('persist');}else{opts[k]=e.target.checked;saveOpts();}
+    barSig='';});
+  const money=v=>'<span class="amt">'+fmt(v)+'</span>';
+  function setKey(i,label,fn,on){const b=keys[i];if(b.__l!==label){b.innerHTML=label;b.__l=label;}b.disabled=!on;keyFn[i]=on?fn:null;}
+  let barSig='',autoT=0,settleAt=0;
+  function updateBar(now){
+    const ph=S.phase,h=(S.hands||[])[S.active],min=g('MIN_BET')||5,last=S.lastBet||0;
+    optBox('autobet').checked=!!S.autoBet;
+    const sig=[ph,S.bet,S.bankroll,S.active,h&&h.cards.length,(S.hands||[]).length,last,S.autoBet].join('|');
+    if(sig!==barSig){barSig=sig;
+      if(ph==='bet'||ph==='settle'){
+        const base=ph==='bet'&&S.bet>0?S.bet:last,fresh=ph==='settle';
+        const go=fn=>()=>{if(fresh){call('nextRound');}fn();call('render');};
+        setKey(0,'Double '+(base?money(Math.min(base*2,S.bankroll)):''),go(()=>{S.bet=Math.min(base*2,S.bankroll);}),base>0&&S.bankroll>=min&&base*2<=S.bankroll);
+        setKey(1,'Clear',()=>call('clearBet'),ph==='bet'&&S.bet>0);
+        setKey(2,'Repeat '+(last?money(last):''),go(()=>{S.bet=last;}),last>=min&&last<=S.bankroll&&(fresh||S.bet!==last));
+        if(S.bankroll<min&&ph==='bet')setKey(3,'Refill',()=>call('resetBankroll'),true);
+        else setKey(3,'Deal',()=>call('startHand'),ph==='bet'&&S.bet>=min&&S.bet<=S.bankroll);
+      }else if(ph==='insurance'){
+        const half=Math.floor(S.bet/2);
+        setKey(0,'Undo',null,false);setKey(1,'No',()=>call('chooseInsurance',false),true);
+        setKey(2,'Yes '+money(half),()=>call('chooseInsurance',true),half<=S.bankroll);setKey(3,'Double',null,false);
+      }else{
+        const my=ph==='player'&&h;
+        setKey(0,'Split',()=>call('playerSplit'),!!(my&&call('canSplitNow',h)));
+        setKey(1,'Stand',()=>call('playerStand'),!!my);
+        setKey(2,'Hit',()=>call('playerHit'),!!my);
+        setKey(3,'Double',()=>call('playerDouble'),!!(my&&call('canDoubleNow',h)));
+      }
+      bar.dataset.phase=ph;
+      // the options act for you, a moment after the table is ready
+      clearTimeout(autoT);
+      if(ph==='insurance'&&opts.autoinsurance)autoT=setTimeout(()=>{if(S.phase==='insurance')call('chooseInsurance',true);},900);
+      if(ph==='player'&&opts.autosplit&&h&&call('canSplitNow',h)){
+        let rec=null;try{rec=call('recommend',h.cards,S.dealer.cards[0],{canDouble:call('canDoubleNow',h),canSplit:true});}catch(e){}
+        if(rec==='SPLIT')autoT=setTimeout(()=>{if(S.phase==='player'&&S.hands[S.active]===h)call('playerSplit');},900);}
+      if(ph==='settle'){settleAt=now;
+        // as in the video: the round clears itself; Autobet puts the same bet straight back in and deals
+        autoT=setTimeout(()=>{if(S.phase!=='settle')return;
+          if(S.autoBet&&last>=min&&last<=S.bankroll)call('dealSameBet');else{call('nextRound');S.bet=0;call('render');}},4200);}
+    }
+  }
   window.bjDealerPose=function(name){if(name==='dl_complete')nodT=performance.now();};
   window.__w3dSnap=true;sync();window.__w3dSnap=false;     // whatever is on the table already appears without a deal
 
@@ -740,11 +811,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // whatever a hand is holding follows it
     for(const m of meshes.values())if(m.userData.held){gripPoint(m.userData.held,m.position);m.position.y=Math.max(m.position.y+(m.userData.heldOff||0),TABLE_Y+0.004);}
     for(const st of stacks.values())if(st.userData.held){gripPoint(st.userData.held,st.position);st.position.y=Math.max(st.position.y-0.02,TABLE_Y+0.001);}
-    updateSelector(now);updateSparks(dt);
+    updateSelector(now);updateSparks(dt);updateBar(now);
     const hs=S.hands||[];
     if(S.phase==='player'&&hs.length>1){activeRing.visible=true;activeRing.position.copy(chipSpot(S.active,hs.length)).setY(TABLE_Y+0.0015);}else activeRing.visible=false;
     lookOf(VIEWS[view],lookWant);LOOK.lerp(lookWant,1-Math.exp(-dt*3));
-    viewPos(view,camWant);camWant.sub(lookWant).multiplyScalar(cam.userData.dist||1).add(lookWant);
+    if(opts.zoom&&view===0)lookWant.lerp(handSpot(0,1),0.55);
+    viewPos(view,camWant);camWant.sub(lookWant).multiplyScalar((cam.userData.dist||1)*(opts.zoom&&view===0?0.62:1)).add(lookWant);
     camPos.lerp(camWant,1-Math.exp(-dt*3));cam.position.copy(camPos);cam.lookAt(LOOK);
     renderer.render(scene,cam);
     syncLabels();

@@ -35,3 +35,22 @@ What it does:
 - If WebGL or three.js can't load, the original sprite stays.
 
 The game's `bjDealerPose()` also needs two changes: it keeps the `d3` class and calls `window.__d3pose(name, ms)`. That way the existing `dl_aim` and `dl_complete` calls drive the 3D dealer.
+
+## Gameplay controls (3D mode)
+
+`blackjack3d-page.html` is the whole published page: the game, the CSS and the 3D module. In 3D mode the game's own button row is replaced by an action bar laid out like the reference video's. It has four fixed keys that change with the phase; unavailable keys dim but never move:
+
+| Phase | Keys |
+|---|---|
+| Betting | DOUBLE (twice the current or last bet) · CLEAR · REPEAT (last bet) · DEAL |
+| Insurance | UNDO (off) · NO · YES (half the bet) · DOUBLE (off) |
+| Your turn | SPLIT · STAND · HIT · DOUBLE |
+
+Under the keys are four options:
+
+- **AUTOSPLIT** splits a pair when splitting is the book play.
+- **AUTOINSURANCE** takes insurance automatically.
+- **AUTOBET** re-bets the last amount and deals.
+- **ZOOM** moves the camera in to your hand.
+
+After each round the table clears itself back to betting, as in the video. The bar sits outside the scaled 2D stage, so its keys stay full size on phones.
