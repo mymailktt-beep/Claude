@@ -12,15 +12,15 @@ How it fits into the game:
 - A camera button in the top bar cycles between your seat and the two side views.
 - If WebGL or three.js can't load, the 2D table stays.
 
-The table is `assets/table.glb`, with its long straight dealer section shortened to 22 cm at load time so the dealer stands close to the players. The chips and the card back come from `assets/chips-cards.glb`. It follows the reference video of the game it is modelled on:
+The table is built in code: a smooth semicircle with a padded black leather rail, polished burl-wood trim, glowing cup holders, a tilted chip rack and tufted leather chairs, on a navy carpet with small gold seals. In 3D mode the action buttons become a flat navy bar with blue keys. The chips and the card back come from `assets/chips-cards.glb`. It follows the reference video of the game it is modelled on:
 - You bet by tapping the 3D chips on the felt in front of your seat (they replace the 2D chip buttons); the last chip you tapped glows.
 - The dealer carries every card from the shoe to its spot with his left hand, leaning in from the hips to reach your spot.
 - On your turn he points his index finger down at your cards (hit or stand?), with a light tap.
 - He takes a lost bet back to the tray, brings winnings from the tray to your spot, and sweeps each hand's cards into the discard holder.
 - Cards are unlit and pure white, fanned in a row with large corner indices, with round total badges and WON / LOST / BUST tags.
-- The table is narrowed across (chairs keep full size) so the dealer can reach your spot.
+- The table is sized so the dealer can reach your spot.
 
-To install it, paste the snippet before `</body>` and publish `dealer-model.js`, `table-model.js` and `chips-model.js` next to the page (each is `export default "<base64 of the .glb>";`). That file is `export default "<base64 of assets/dealer-realistic.glb>";`; it is a script because artifacts don't serve `.glb` files.
+To install it, paste the snippet before `</body>` and publish `dealer-model.js` and `chips-model.js` next to the page (each is `export default "<base64 of the .glb>";`). That file is `export default "<base64 of assets/dealer-realistic.glb>";`; it is a script because artifacts don't serve `.glb` files.
 
 The camera button cycles through four views: high over the felt so the cards read from above (the default), your seat, and the two side seats.
 
