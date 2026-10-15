@@ -39,6 +39,9 @@ si = img_of('Cotton_Oxford_FCL1PSC011_FRONT_4174'); top = get(si)
 g = ImageOps.grayscale(top); lo, hi = g.getextrema()
 edits[si] = Image.merge('RGB', [g.point(lambda v: int(222 + 30 * (v - lo) / max(1, hi - lo)))] * 3)
 
+# hair: the video's dealer is dark-haired
+hi_ = img_of('Material13385'); hair = get(hi_)
+edits[hi_] = Image.eval(hair, lambda v: int(v * 0.42))
 caps = {'Material13454': 1024, 'Material13458': 1024, 'Material13462': 1024, 'Cotton_Oxford_FCL1PSC011_FRONT_4174': 512,
         'Material13385': 512, 'Material13466': 256, 'Stretch_Denim_FCL1PSD003_FRONT_4181': 256, 'shoes_r_Shape__0': 128}
 cap_of = {}

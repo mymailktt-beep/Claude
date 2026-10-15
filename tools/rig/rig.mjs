@@ -33,7 +33,7 @@ for(const [sx,P0] of [[1,'Left'],[-1,'Right']]){
   const A=nrm(sub(tip,W));let L=[0,0,1];L=nrm(sub(L,mul(A,dot(L,A))));const N=cross(A,L);
   const hand=V.map(v=>{const d=sub(v,W);return {v,t:dot(d,A),s:dot(d,L),q:dot(d,N)};}).filter(h=>h.t>-0.012);
   const isThumb=h=>h.s>=0.035||(h.s>=0.02&&h.t>0.045&&h.t<0.095);
-  const FING=[['Index',0.010,0.04],['Middle',-0.006,0.010],['Ring',-0.022,-0.006],['Pinky',-0.06,-0.022]];
+  const FING=[['Index',0.0125,0.034],['Middle',-0.011,0.0125],['Ring',-0.0355,-0.011],['Pinky',-0.06,-0.0355]];   // gaps between the fingers, measured
   const fingerOf=h=>{if(isThumb(h))return 'Thumb';if(h.t<0.085)return null;for(const[f,a,b]of FING)if(h.s>=a&&h.s<b)return f;return null;};
   const at=(t,s,q)=>add(W,add(add(mul(A,t),mul(L,s)),mul(N,q)));
   const centerNear=(list,t,w=0.007)=>{const Q=list.filter(h=>Math.abs(h.t-t)<w);if(!Q.length)return null;const s=Q.reduce((a,h)=>a+h.s,0)/Q.length,q=Q.reduce((a,h)=>a+h.q,0)/Q.length;return [t,s,q];};
