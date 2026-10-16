@@ -2148,12 +2148,20 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
         out.push({card:c,pos:sp.clone().add(off).setY(TABLE_Y+0.002+j*0.0006),yaw:yaw+(h.doubled&&j===2?Math.PI/2:0),up:true,hand:i});});});
     return out;
   }
-  const dealQueue=[];let dealing=false;
-  async function runDeals(){
-    if(dealing)return;dealing=true;
-    while(dealQueue.length){
-      const job=dealQueue.shift(),fast=dealQueue.length>2?0.8:1,a=arm.L,m=job.mesh;a.busy++;   // an unhurried pace; only a long queue speeds him up a little
-      while(collecting)await sleep(40);
+  // The dealer's left hand does one thing at a time, in order: deal a card, sweep a hand, deal the next...
+  // A single queue (not two loops waiting on each other) so a round that ends early, e.g. on a blackjack,
+  // can never leave the two jobs waiting for each other.
+  let leftQ=Promise.resolve(),dealsPending=0,collectsPending=0;
+  const leftDo=fn=>(leftQ=leftQ.then(fn).catch(e=>console.warn('3D dealer',e)));
+  let dealing=false,collecting=false;                      // read by the pose code: is the left hand at work?
+  const updFlags=()=>{dealing=dealsPending>0;collecting=collectsPending>0;};
+  function queueDeal(job){dealsPending++;updFlags();leftDo(()=>dealOne(job)).then(()=>{dealsPending--;updFlags();sync();});}
+  function queueCollect(cards){collectsPending++;updFlags();leftDo(()=>collectOne(cards)).then(()=>{collectsPending--;updFlags();});}
+  async function dealOne(job){
+    const m=job.mesh;
+    if(m.userData.leaving){scene.remove(m);meshes.delete(m.userData.key);return;}   // the round ended before this card was dealt
+    const fast=dealsPending>3?0.8:1,a=arm.L;a.busy++;   // an unhurried pace; only a long queue speeds her up a little
+    try{
       const toShoe=new THREE.Vector3().subVectors(shoeMouth,a.wrist).setY(0).normalize();
       await moveHand(a,shoeMouth.clone().add(new THREE.Vector3(0,0.03,0)),300*fast,toShoe,0.05);
       m.visible=true;m.userData.held=a;m.rotation.y=0.75;
@@ -2163,31 +2171,24 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       const from=m.position.clone(),yaw0=m.rotation.y;
       moveHand(a,REST.L,560*fast,new THREE.Vector3(0,0,1),0.03);
       const slide=tween(220*fast,k=>{m.position.lerpVectors(from,job.pos,k);m.rotation.y=yaw0+(job.yaw-yaw0)*k;},easeOut);
-      const turn=job.up?setFace(m,true,340*fast):Promise.resolve();
+      const turn=job.up&&!m.userData.leaving?setFace(m,true,340*fast):Promise.resolve();
       await Promise.all([slide,turn]);
-      m.userData.placed=true;m.userData.target=job.pos.clone();m.userData.yaw=job.yaw;a.busy--;
-    }
-    dealing=false;sync();
+      m.userData.placed=true;m.userData.target=job.pos.clone();m.userData.yaw=job.yaw;
+      if(m.userData.leaving)queueCollect([m]);            // it left play while in her hand: sweep it straight away
+    }finally{m.userData.held=null;a.busy--;}
   }
   let discardCount=0;
-  const collectJobs=[];let collecting=false;
-  async function runCollect(){
-    if(collecting)return;collecting=true;
-    while(collectJobs.length){
-      const cards=collectJobs.shift(),a=arm.L;
-      while(dealing)await sleep(40);
-      a.busy++;
+  async function collectOne(cards){
+    const a=arm.L;a.busy++;
+    try{
       const c=new THREE.Vector3();cards.forEach(m=>c.add(m.position));c.divideScalar(cards.length);
       cards.forEach(m=>setFace(m,false,260));
       await moveHand(a,c.clone().setY(TABLE_Y+0.02),440,null,0.05);
       cards.forEach((m,i)=>{m.userData.held=a;m.userData.heldOff=i*0.0007;});
       await moveHand(a,DISCARD_POS.clone().add(new THREE.Vector3(0,0.06,0)),560,null,0.07);
-      for(const m of cards){scene.remove(m);meshes.delete(m.userData.key);}
       discardCount+=cards.length;discardPile.visible=true;discardPile.scale.y=Math.min(90,discardCount*0.5);discardPile.position.y=discardPile.scale.y*0.0005;
       await moveHand(a,REST.L,460,null,0.03);
-      a.busy--;
-    }
-    collecting=false;
+    }finally{for(const m of cards){scene.remove(m);meshes.delete(m.userData.key);}a.busy--;}
   }
   function sync(){
     const want=layout(),seen=new Set();
@@ -2196,7 +2197,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       if(!m){
         m=makeCard(w.card);meshes.set(k,m);m.userData.key=k;m.userData.dealer=!!w.dealer;
         if(reduced()||window.__w3dSnap){m.position.copy(w.pos);m.rotation.y=w.yaw;if(w.up)setFace(m,true,0);m.userData.placed=true;m.userData.target=w.pos.clone();m.userData.yaw=w.yaw;}
-        else{m.visible=false;m.position.copy(shoeMouth);dealQueue.push({mesh:m,pos:w.pos,yaw:w.yaw,up:w.up});runDeals();}
+        else{m.visible=false;m.position.copy(shoeMouth);queueDeal({mesh:m,pos:w.pos,yaw:w.yaw,up:w.up});}
         continue;
       }
       if(!m.userData.placed)continue;
@@ -2207,15 +2208,15 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       }
     }
     const gone={p:[],d:[]};
-    for(const[k,m]of meshes){if(seen.has(k)||m.userData.leaving||!m.userData.placed)continue;
-      m.userData.leaving=true;gone[m.userData.dealer?'d':'p'].push(m);}
-    for(const g of[gone.p,gone.d])if(g.length){collectJobs.push(g);runCollect();}
+    for(const[k,m]of meshes){if(seen.has(k)||m.userData.leaving)continue;
+      m.userData.leaving=true;if(m.userData.placed)gone[m.userData.dealer?'d':'p'].push(m);}   // not yet dealt: her queue drops or sweeps it
+    for(const g of[gone.p,gone.d])if(g.length)queueCollect(g);
     syncChips();
   }
 
   /* ---------- chips on the betting circles ---------- */
   const stacks=new Map();
-  const RACK_POS=new THREE.Vector3(0,TABLE_Y+0.04,EDGE_Z-TABLE_D+0.1), PLAYER_POS=arcPt(R+0.3,SEAT_A,TABLE_Y+0.04);
+  const RACK_POS=new THREE.Vector3(0,TABLE_Y+0.04,EDGE_Z-TABLE_D+0.1), PLAYER_POS=arcPt(R+0.16,SEAT_A,TABLE_Y+0.1);
   const chipJobs=[];let chipping=false;
   async function runChips(){
     if(chipping)return;chipping=true;
@@ -2259,7 +2260,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       const lost=hs.some((h,i)=>('h'+i)===k&&(h.outcome==='lose'||h.outcome==='bust'));
       if(lost){chipJobs.push({type:'take',stack:s,key:k});runChips();continue;}
       const f=s.position.clone(),to=PLAYER_POS.clone();     // your winnings come back to you
-      tween(480,q=>{s.position.lerpVectors(f,to,q);s.position.y+=Math.sin(Math.PI*q)*0.06;}).then(()=>{scene.remove(s);stacks.delete(k);});}
+      s.userData.held=null;tween(480,q=>{s.position.lerpVectors(f,to,q);s.position.y+=Math.sin(Math.PI*q)*0.06;s.scale.setScalar(1-q*0.6);}).then(()=>{scene.remove(s);stacks.delete(k);});}
   }
 
   /* ---------- labels: totals, outcomes, bets (HTML over the 3D view) ---------- */
@@ -2406,7 +2407,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     barSig='';});
   const money=v=>'<span class="amt">'+fmt(v)+'</span>';
   function setKey(i,label,fn,on){const b=keys[i];if(b.__l!==label){b.innerHTML=label;b.__l=label;}b.disabled=!on;keyFn[i]=on?fn:null;}
-  let barSig='',autoT=0,settleAt=0;
+  let barSig='',autoT=0,settleAt=Infinity,busyAt=0;
   function updateBar(now){
     const ph=S.phase,h=(S.hands||[])[S.active],min=g('MIN_BET')||5,last=S.lastBet||0;
     optBox('autobet').checked=!!S.autoBet;
@@ -2438,11 +2439,13 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       if(ph==='player'&&opts.autosplit&&h&&call('canSplitNow',h)){
         let rec=null;try{rec=call('recommend',h.cards,S.dealer.cards[0],{canDouble:call('canDoubleNow',h),canSplit:true});}catch(e){}
         if(rec==='SPLIT')autoT=setTimeout(()=>{if(S.phase==='player'&&S.hands[S.active]===h)call('playerSplit');},900);}
-      if(ph==='settle'){settleAt=now;
-        // as in the video: the round clears itself; Autobet puts the same bet straight back in and deals
-        autoT=setTimeout(()=>{if(S.phase!=='settle')return;
-          if(S.autoBet&&last>=min&&last<=S.bankroll)call('dealSameBet');else{call('nextRound');S.bet=0;call('render');}},4200);}
+      if(ph==='settle')settleAt=now;
     }
+    // as in the video the round clears itself, once the dealer has finished dealing and paying and you've had a moment to see it;
+    // Autobet puts the same bet straight back in and deals
+    if(dealsPending||collectsPending||chipping)busyAt=now;
+    if(ph==='settle'&&now-settleAt>3500&&now-busyAt>2200){settleAt=Infinity;
+      if(S.autoBet&&last>=min&&last<=S.bankroll)call('dealSameBet');else{call('nextRound');S.bet=0;call('render');}}
   }
   window.bjDealerPose=function(name){if(name==='dl_complete')nodT=performance.now();};
   window.__w3dSnap=true;sync();window.__w3dSnap=false;     // whatever is on the table already appears without a deal
