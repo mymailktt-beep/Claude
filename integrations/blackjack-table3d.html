@@ -632,7 +632,8 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       placeLabel('h'+i,handSpot(i,hs.length).add(new THREE.Vector3((h.cards.length-1)/2*FAN+CW*0.5+0.03,0,CH*0.25)),`<span class="tot${act?' act':''}${tcls}">${v.total}</span>`);
       if(o){placeLabel('ho'+i,handSpot(i,hs.length).add(new THREE.Vector3(-(h.cards.length-1)/2*FAN-CW*0.5-0.05,0,0)),o);used.add('ho'+i);}
       used.add('h'+i);});
-    if(S.phase==='bet'&&S.bet>0){placeLabel('b',chipSpot(0,1).add(new THREE.Vector3(0.09,0,0)),`<span class="bet">${fmt(S.bet)}</span>`);used.add('b');}
+    if(S.phase==='insurance'&&(S.hands||[])[0]){placeLabel('ins',handSpot(0,1).add(new THREE.Vector3(0,0,-CH*0.75)),'<span class="out o-ins">Insure bet?</span>');used.add('ins');}
+    if(S.phase==='bet'&&S.bet>0){placeLabel('b',chipSpot(0,1).add(new THREE.Vector3(0.1,0,-0.06)),`<span class="bet">${fmt(S.bet)}</span>`);used.add('b');}
     for(const k in lab)if(!used.has(k))lab[k].hidden=true;
   }
   // a soft ring under the hand in play when there are split hands
@@ -725,7 +726,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
        your turn  SPLIT · STAND · HIT · DOUBLE
        options    AUTOSPLIT · AUTOINSURANCE · AUTOBET · ZOOM */
   const E=name=>{try{return ({nextRound,rebet,clearBet,startHand,dealSameBet,chooseInsurance,playerHit,playerStand,playerDouble,playerSplit,
-    canSplitNow,canDoubleNow,curHand,recommend,persist,render,resetBankroll})[name];}catch(e){return null;}};
+    canSplitNow,canDoubleNow,curHand,recommend,persist,render,resetBankroll,openMenu})[name];}catch(e){return null;}};
   const call=(name,...a)=>{const f=E(name);if(f)return f(...a);};
   const OPT_KEY='bj3d.options';let opts={autosplit:false,autoinsurance:false,zoom:false};
   try{Object.assign(opts,JSON.parse(localStorage.getItem(OPT_KEY)||'{}'));}catch(e){}
@@ -786,6 +787,68 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     if(ph==='settle'&&now-settleAt>3500&&now-busyAt>2200){settleAt=Infinity;
       if(S.autoBet&&last>=min&&last<=S.bankroll)call('dealSameBet');else{call('nextRound');S.bet=0;call('render');}}
   }
+  /* ---------- the screen furniture, laid out as in the reference video ----------
+     a dark header with the title, a blue balance pill, a table panel on the right, rings on the empty seats,
+     your nameplate at your chair, a dealer log at the bottom left, and the payout pill when a round ends */
+  const ICON={menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',view:'<path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="4"/>',
+    help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 1-1 1.7M12 17h.01"/>',
+    stats:'<path d="M5 19V10M12 19V5M19 19v-7"/>'};
+  const svg=k=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+ICON[k]+'</svg>';
+  const hud=document.createElement('div');hud.id='bjHud';
+  hud.innerHTML=
+    '<header class="hb"><div class="hb-side"><button class="hb-btn" data-a="menu">'+svg('menu')+'<span>Menu</span></button><button class="hb-btn" data-a="stats">'+svg('stats')+'<span>Stats</span></button></div>'+
+    '<h1 class="hb-title">Blackjack</h1>'+
+    '<div class="hb-side r"><button class="hb-btn" data-a="view">'+svg('view')+'<span>View</span></button><button class="hb-btn" data-a="help">'+svg('help')+'<span>Rules</span></button></div></header>'+
+    '<div class="bal"><span class="bal-chip"></span><b class="bal-amt"></b><span class="bal-delta"></span></div>'+
+    '<aside class="tp"><div class="tp-h">Table</div><div class="tp-v tp-shoe"></div><div class="tp-r"><span>Hands</span><b class="tp-hands"></b></div>'+
+    '<div class="tp-r"><span>Session</span><b class="tp-net"></b></div><div class="tp-r"><span>Limits</span><b class="tp-lim"></b></div></aside>'+
+    '<div class="seatring" data-s="1"><span>+</span></div><div class="seatring" data-s="2"><span>+</span></div>'+
+    '<div class="np"><div class="np-av"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="4.2"/><path d="M3.5 21c.8-4.6 4.2-7 8.5-7s7.7 2.4 8.5 7z"/></svg></div><div class="np-name">You</div><div class="np-amt"></div><div class="np-pay"></div></div>'+
+    '<section class="log"><div class="log-tabs"><span class="on">Dealer</span></div><ol class="log-lines"></ol></section>'+
+    '<div class="rules" hidden><div class="rules-card"><h2>Table rules</h2><ul>'+
+      '<li>Blackjack pays 3 to 2. Insurance pays 2 to 1.</li><li>Dealer draws to 16 and stands on all 17s.</li>'+
+      '<li>Double on any two cards, including after a split.</li><li>Split pairs up to four hands. Split aces get one card each.</li>'+
+      '<li>4-deck shoe, reshuffled at the cut card.</li></ul><button class="key" data-a="close">Close</button></div></div>';
+  wrap.appendChild(hud);
+  const $h=sel=>hud.querySelector(sel);
+  hud.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a;
+    if(a==='menu'||a==='stats')call('openMenu');else if(a==='view')viewBtn.onclick();else if(a==='help')$h('.rules').hidden=false;else if(a==='close')$h('.rules').hidden=true;});
+  $h('.rules').addEventListener('click',e=>{if(e.target===e.currentTarget)e.currentTarget.hidden=true;});
+  const logLines=$h('.log-lines'),log=(t,cls='')=>{const li=document.createElement('li');li.className=cls;li.textContent=t;logLines.appendChild(li);
+    while(logLines.children.length>5)logLines.firstChild.remove();};
+  log('Welcome to the table. Place a bet to begin.');
+  let hudPh='',hudBank=null,shownBank=0,deltaT=0;
+  const OUTW={win:'won',bj:'blackjack',push:'push',lose:'lost',bust:'bust'};
+  function updateHud(now,dt){
+    const ph=S.phase,b=S.bankroll;
+    if(hudBank===null){hudBank=b;shownBank=b;}
+    if(b!==hudBank){const d=b-hudBank;hudBank=b;}
+    shownBank+=(b-shownBank)*Math.min(1,dt*6);if(Math.abs(b-shownBank)<0.5)shownBank=b;
+    const ba=fmt(Math.round(shownBank*100)/100);if($h('.bal-amt').textContent!==ba){$h('.bal-amt').textContent=ba;$h('.np-amt').textContent=ba;}
+    const st=S.stats||{},left=(S.shoe&&S.shoe.length?S.shoe.length-S.drawn:0);
+    const shoeTxt=Math.round((S.shoe&&S.shoe.length||208)/52)+'-deck shoe · '+left+' left';
+    if($h('.tp-shoe').textContent!==shoeTxt)$h('.tp-shoe').textContent=shoeTxt;
+    $h('.tp-hands').textContent=st.hands||0;const net=st.net||0;$h('.tp-net').textContent=(net>=0?'+':'−')+fmt(Math.abs(net));$h('.tp-net').className='tp-net '+(net>0?'up':net<0?'down':'');
+    $h('.tp-lim').textContent=fmt(g('MIN_BET')||5)+' – '+fmt(Math.max(g('MIN_BET')||5,Math.floor(S.bankroll)));
+    if(ph!==hudPh){
+      if(ph==='dealing'&&hudPh==='bet')log('New hand · bet '+fmt(S.bet));
+      if(ph==='insurance')log('Dealer shows an ace · insurance?');
+      if(ph==='dealer')log('Dealer turns over the hole card');
+      if(ph==='settle'){const hv=g('handValue'),dv=hv?hv(S.dealer.cards).total:0;log('Dealer has '+dv+(dv>21?' · bust':''));
+        (S.hands||[]).forEach((h,i,a)=>log((a.length>1?'Hand '+(i+1)+': ':'You: ')+(hv?hv(h.cards).total:'')+' · '+(OUTW[h.outcome]||h.outcome),'lg-'+h.outcome));
+        const n=S.lastRoundNet||0,pay=$h('.np-pay');pay.textContent=(n>0?'+':n<0?'−':'±')+fmt(Math.abs(n));pay.className='np-pay show '+(n>0?'up':n<0?'down':'even');deltaT=now;}
+      hudPh=ph;}
+    if(deltaT&&now-deltaT>3200){$h('.np-pay').classList.remove('show');deltaT=0;}
+    // seat rings over the empty chairs, your nameplate at your chair
+    const put=(el,deg,y)=>{const a=deg*Math.PI/180,p=arcPt(R+0.6,a,y).project(cam);const vis=p.z<1&&Math.abs(p.x)<0.88&&Math.abs(p.y)<0.9;el.hidden=!vis;
+      if(vis){const sx=(p.x+1)/2*innerWidth,sy=(1-p.y)/2*innerHeight;el.style.left=sx+'px';el.style.top=sy+'px';
+        if(el.classList.contains('seatring')&&(sy<130||sx<50||sx>innerWidth-50))el.hidden=true;}};
+    put($h('[data-s="1"]'),SEATS[1],0.95);put($h('[data-s="2"]'),SEATS[2],0.95);put($h('.np'),SEAT_DEG,1.1);
+    { const np=$h('.np'),barTop=bar.getBoundingClientRect().top,wide=innerWidth>=900;   // keep your nameplate clear of the action bar
+      let y=parseFloat(np.style.top)||0,x=parseFloat(np.style.left)||0;
+      if(wide){const br=bar.getBoundingClientRect();x=Math.min(x,br.left-60);y=Math.min(y,innerHeight-80);}else y=Math.min(y,barTop-60);
+      np.style.left=x+'px';np.style.top=y+'px';np.hidden=false; }
+  }
   window.bjDealerPose=function(name){if(name==='dl_complete')nodT=performance.now();};
   window.__w3dSnap=true;sync();window.__w3dSnap=false;     // whatever is on the table already appears without a deal
 
@@ -821,7 +884,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // whatever a hand is holding follows it
     for(const m of meshes.values())if(m.userData.held){gripPoint(m.userData.held,m.position);m.position.y=Math.max(m.position.y+(m.userData.heldOff||0),TABLE_Y+0.004);}
     for(const st of stacks.values())if(st.userData.held){gripPoint(st.userData.held,st.position);st.position.y=Math.max(st.position.y-0.02,TABLE_Y+0.001);}
-    updateSelector(now);updateSparks(dt);updateBar(now);
+    updateSelector(now);updateSparks(dt);updateBar(now);updateHud(now,dt);
     const hs=S.hands||[];
     if(S.phase==='player'&&hs.length>1){activeRing.visible=true;activeRing.position.copy(chipSpot(S.active,hs.length)).setY(TABLE_Y+0.0015);}else activeRing.visible=false;
     lookOf(VIEWS[view],lookWant);LOOK.lerp(lookWant,1-Math.exp(-dt*3));
