@@ -262,12 +262,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     const cup=new THREE.Mesh(new THREE.CylinderGeometry(0.036,0.032,0.012,32),gold);cup.position.copy(p);table.add(cup);
     const well=new THREE.Mesh(new THREE.CircleGeometry(0.028,24),std({color:0xffd23a,emissive:0xffc400,emissiveIntensity:.9,roughness:.4}));well.rotation.x=-Math.PI/2;well.position.copy(p).add(new THREE.Vector3(0,0.0062,0));table.add(well);}
   // the chip rack: a steel-edged tray tilted towards the dealer, twelve tall stacks lying on edge
-  const RACK_W=0.6,RACK_D=0.17;
-  { const rack=new THREE.Group();rack.position.set(0,TABLE_Y,EDGE_Z-TABLE_D+RACK_D/2+0.01);rack.rotation.x=-0.12;table.add(rack);
+  const RACK_W=0.48,RACK_D=0.17;                          // measured from the reference video: 0.47 m wide, its front edge 0.42 m out
+  { const rack=new THREE.Group();rack.position.set(0.03,TABLE_Y,0.31);rack.rotation.x=-0.12;table.add(rack);
     const steel=std({color:0xd5dae0,metalness:.85,roughness:.28});
     const base=new THREE.Mesh(new RoundedBoxGeometry(RACK_W+0.03,0.02,RACK_D+0.02,3,0.006),steel);base.position.y=0.01;base.castShadow=base.receiveShadow=true;rack.add(base);
     const inner=new THREE.Mesh(new THREE.BoxGeometry(RACK_W,0.004,RACK_D),std({color:0x1b1d22,roughness:.6}));inner.position.y=0.021;rack.add(inner);
-    const cols=[5,25,100,500,5,25,100,500,25,5,100,25],n=cols.length,step=RACK_W/n;
+    const cols=[5,25,100,500,5,25,100,500,25,5],n=cols.length,step=RACK_W/n;
     cols.forEach((v,i)=>{const len=RACK_D*(0.82+0.15*((i*7)%3)/2),cnt=Math.floor(len/CHIP_H);
       for(let k=0;k<cnt;k++){const ch=chipMesh(v);ch.rotation.x=Math.PI/2;ch.position.set(-RACK_W/2+step*(i+.5),0.023+CHIP_R,RACK_D/2-CHIP_H*(k+.5));rack.add(ch);}});
     for(let i=0;i<=n;i++){const d=new THREE.Mesh(new THREE.BoxGeometry(0.003,0.012,RACK_D),steel);d.position.set(-RACK_W/2+step*i,0.027,0);rack.add(d);}
@@ -292,7 +292,8 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   SEATS.forEach(d=>chair(d));
   // the shoe (viewer's right) and the discard holder (viewer's left)
   const acrylic=std({color:0xdfe9f2,transparent:true,opacity:.12,roughness:.05,metalness:.1,depthWrite:false});
-  const SHOE_POS=new THREE.Vector3(0.5,TABLE_Y,EDGE_Z-0.0), DISCARD_POS=new THREE.Vector3(-0.5,TABLE_Y,EDGE_Z-0.02);
+  const SHOE_POS=new THREE.Vector3(0.37,TABLE_Y,EDGE_Z),   // its mouth where the video's is: (0.43, 0.32)
+        DISCARD_POS=new THREE.Vector3(-0.5,TABLE_Y,EDGE_Z-0.02);
   const shoeMouth=new THREE.Vector3();
   { const shoe=new THREE.Group();shoe.position.copy(SHOE_POS);shoe.rotation.y=0.75;table.add(shoe);
     const box=new THREE.Mesh(new THREE.BoxGeometry(0.11,0.1,0.2),acrylic);box.position.set(0,0.055,0);shoe.add(box);
@@ -347,7 +348,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       fingers:{index:fingerBones(P,'Index'),thumb:fingerBones(P,'Thumb'),others:['Middle','Ring','Pinky'].map(n=>fingerBones(P,n))},
       shoulder0:wp(u),busy:0,point:0,down:0,pos:new THREE.Vector3(),vel:new THREE.Vector3()};}
   // resting: hands flat on the felt either side of the chip rack, as in the video
-  const REST={L:new THREE.Vector3(0.37,TABLE_Y+0.012,EDGE_Z+0.1),R:new THREE.Vector3(-0.42,TABLE_Y+0.012,EDGE_Z-0.01)};
+  const REST={L:SHOE_TOP.clone(),R:new THREE.Vector3(-0.3,TABLE_Y+0.012,0.36)};   // tracked from the video: left hand on the shoe, right hand beside the rack
   for(const s of['R','L']){arm[s].target.copy(REST[s]);arm[s].pos.copy(REST[s]);}
   const _q=new THREE.Quaternion(),_qa=new THREE.Quaternion(),_qb=new THREE.Quaternion(),_pq=new THREE.Quaternion(),_a=new THREE.Vector3(),_b=new THREE.Vector3();
   const UP=new THREE.Vector3(0,1,0),DOWN=new THREE.Vector3(0,-1,0);
@@ -413,14 +414,14 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const leanV=new THREE.Vector3();let twist=0;const _lw=new THREE.Vector3(),_ld=new THREE.Vector3();
   function leanTowards(dt){
     _lw.set(0,0,0);let yaw=0,wsum=0;
-    for(const a of[arm.L,arm.R]){_ld.set(a.pos.x-a.shoulder0.x,0,a.pos.z-a.shoulder0.z);
+    for(const a of[arm.L,arm.R]){_ld.set(a.target.x-a.shoulder0.x,0,a.target.z-a.shoulder0.z);   // leans for where the hand is heading
       const need=Math.max(0,_ld.length()-(a.L1+a.L2+a.HL)*0.62);if(need<=0)continue;
-      _lw.addScaledVector(_ld.normalize(),Math.min(1,need*2.4));
-      const w=need;yaw+=Math.atan2(a.pos.x,a.pos.z-DEALER_Z)*Math.min(1,need/0.15)*w;wsum+=w;}
+      _lw.addScaledVector(_ld.normalize(),Math.min(0.95,need*2.3));   // as in the video: she leans well forward for the far reaches (your cards, your bet)
+      const w=need;yaw+=Math.atan2(a.target.x,a.target.z-DEALER_Z)*Math.min(1,need/0.15)*w;wsum+=w;}
     if(_lw.length()>1)_lw.normalize();
     yaw=wsum>0?yaw/wsum:0;
     const k=1-Math.exp(-dt*3);
-    leanV.lerp(_lw,k);twist+=(Math.max(-0.6,Math.min(0.6,yaw*0.8))-twist)*k;
+    leanV.lerp(_lw,k);twist+=(Math.max(-0.35,Math.min(0.35,yaw*0.45))-twist)*k;
     if(Math.abs(twist)>0.002)for(const[b,f]of[[spineB,0.3],[spine1B,0.35],[chestB,0.35]]){b.getWorldQuaternion(_qb);setWorldQ(b,_qb.premultiply(_qa.setFromAxisAngle(UP,twist*f)));}
     const lean=leanV.length();if(lean<0.002)return;
     const axis=new THREE.Vector3().crossVectors(UP,leanV).normalize();
@@ -430,7 +431,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
 
   // Hands never jump: each follows its commanded target on a critically damped spring with a speed limit,
   // so a run of moves (shoe, hand-off, spot) reads as one flowing motion, the way a real dealer moves.
-  const HAND_W=10.5,HAND_VMAX=1.5,_sp=new THREE.Vector3();
+  const HAND_W=14,HAND_VMAX=1.6,_sp=new THREE.Vector3();
   function stepHand(a,dt){
     for(let t=dt;t>1e-6;t-=0.004){const h=Math.min(0.004,t);
       _sp.subVectors(a.target,a.pos).multiplyScalar(HAND_W*HAND_W).addScaledVector(a.vel,-2*HAND_W);
@@ -484,6 +485,24 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     return tween(ms,k=>{a.target.lerpVectors(from,to,k);a.target.y+=Math.sin(Math.PI*k)*lift;a.dir.lerpVectors(d0,d1,k);if(a.dir.lengthSq()<1e-6)a.dir.copy(d1);a.dir.normalize();},smooth)
       .then(()=>settle?arrived(a):null);};
   const PACE=1.35;                                        // an unhurried, even pace
+  // One continuous motion through a list of waypoints, the way the hands move in the reference video:
+  // a smooth curve that passes through every point without stopping, eased in at the start and out at the end.
+  // keys: [{p:Vector3, t:seconds from start, at:fn called as the hand passes that point}]
+  function sweep(a,keys){
+    if(reduced()){a.target.copy(keys[keys.length-1].p);keys.forEach(k=>k.at&&k.at());return Promise.resolve();}
+    const pts=[a.target.clone(),...keys.map(k=>k.p.clone())],ts=[0,...keys.map(k=>k.t)],N=pts.length-1,T=ts[N];
+    const curve=new THREE.CatmullRomCurve3(pts,false,'centripetal');
+    const fired=new Array(keys.length).fill(false);
+    const ease=x=>x<0.12?(x*x)/(0.24):x>0.88?1-((1-x)*(1-x))/0.24:x;      // soft start and finish, steady in between
+    const span=ease(1);
+    return tween(T*1000,k=>{
+      const tt=ease(k)/span*T;let i=0;while(i<N-1&&tt>ts[i+1])i++;
+      const f=Math.min(1,Math.max(0,(tt-ts[i])/Math.max(1e-6,ts[i+1]-ts[i])));
+      a.target.copy(curve.getPoint((i+f)/N));
+      for(let j=0;j<keys.length;j++)if(!fired[j]&&tt>=keys[j].t-1e-4){fired[j]=true;if(keys[j].at)keys[j].at();}
+    },x=>x).then(()=>{keys.forEach((k,j)=>{if(!fired[j]&&k.at)k.at();});});
+  }
+  const up=(v,h)=>v.clone().setY(TABLE_Y+h);
 
   /* ---------- cards ---------- */
   const cardGeo=new THREE.PlaneGeometry(CW,CH);
@@ -504,7 +523,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const FAN=CW*0.32;                                      // each card shows a strip of the one under it
   function handSpot(i,n){const a=SEAT_A-((n-1)/2-i)*0.44;return arcPt(SEAT_R-0.115,a,TABLE_Y);}
   function chipSpot(i,n){const a=SEAT_A-((n-1)/2-i)*0.44;return arcPt(SEAT_R,a,TABLE_Y);}
-  const DEALER_SPOT=new THREE.Vector3(-0.43,TABLE_Y,EDGE_Z+0.25);
+  const DEALER_SPOT=new THREE.Vector3(-0.08,TABLE_Y,0.49);   // in front of the rack, as in the video
   function layout(){
     // where every visible card should be, from the game state
     const out=[];
@@ -518,45 +537,39 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
         out.push({card:c,pos:sp.clone().add(off).setY(TABLE_Y+0.002+j*0.0006),yaw:yaw+(h.doubled&&j===2?Math.PI/2:0),up:true,hand:i});});});
     return out;
   }
-  /* ---------- the dealer's work, as in the reference video, one action at a time and in order ----------
-     deal:   the left hand slides a card out of the shoe and hands it to the right hand, which carries it to its spot
-             (turning it face up on the way unless it is the hole card)
-     reveal: the right hand lifts the hole card, turns it over and lays it back
-     chips:  the right hand pays from the rack or takes a lost bet back to it
-     clear:  the right hand scoops your cards, draws them in, adds the dealer's, and carries the pile to the discard holder */
+  /* ---------- the dealer's work, rebuilt from hand tracking of the reference video ----------
+     Tracked from the video (30 fps, both hands, projected onto the table through the matched camera):
+     - her left hand rests on the shoe almost the whole time, holding it; it never carries cards
+     - her right hand does everything in continuous arcs: shoe -> card spot -> back to the shoe,
+       about 0.8 s per card (out 0.5 s, back 0.3 s), lifting a few centimetres in the middle
+     - the hole card: placed, then squared up with both hands
+     - clearing: one sweep - your cards, then hers on top, then into the discard holder
+     - between actions the right hand rests flat beside the rack */
   let dq=Promise.resolve(),pending={deal:0,clear:0,chip:0,reveal:0};
   let dealing=false,collecting=false,chipping=false;
   const updFlags=()=>{dealing=pending.deal+pending.reveal>0;collecting=pending.clear>0;chipping=pending.chip>0;};
   function queue(kind,fn){pending[kind]++;updFlags();const r=dq.then(fn).catch(e=>console.warn('3D dealer',e)).then(()=>{pending[kind]--;updFlags();});dq=r;return r;}
-  const HANDOFF=new THREE.Vector3(0.24,TABLE_Y+0.03,EDGE_Z+0.12);       // where the card passes from left hand to right
-  const GATHER=new THREE.Vector3(0.05,TABLE_Y+0.02,EDGE_Z+0.17);        // where she draws your cards in
-  const both=f=>{arm.L.busy++;arm.R.busy++;return Promise.resolve().then(f).finally(()=>{arm.L.busy--;arm.R.busy--;});};
   const right=f=>{arm.R.busy++;return Promise.resolve().then(f).finally(()=>{arm.R.busy--;});};
+  const SHOE_GRAB=shoeMouth.clone().add(new THREE.Vector3(-0.015,0.015,0.02));
   function queueDeal(job){queue('deal',()=>dealOne(job)).then(()=>sync());}
   function queueCollect(cards){queue('clear',()=>clearCards(cards));}
   function queueReveal(m){queue('reveal',()=>revealCard(m));}
   async function dealOne(job){
-    const m=job.mesh,L=arm.L,Rh=arm.R;
-    if(m.userData.leaving){scene.remove(m);meshes.delete(m.userData.key);return;}   // the round ended before this card was dealt
-    const quick=pending.deal>3?0.8:1;
-    await both(async()=>{
+    const m=job.mesh,R=arm.R;
+    if(m.userData.leaving){scene.remove(m);meshes.delete(m.userData.key);return;}
+    await right(async()=>{
       try{
-        const toShoe=new THREE.Vector3().subVectors(shoeMouth,L.wrist).setY(0).normalize();
-        const meet=moveHand(Rh,HANDOFF.clone().add(new THREE.Vector3(-0.05,0,0.02)),420*quick,new THREE.Vector3(1,0,0.6),0.03);
-        await moveHand(L,shoeMouth.clone().add(new THREE.Vector3(0,0.03,0)),260*quick,toShoe,0.03);
-        m.visible=true;m.userData.held=L;m.rotation.y=0.75;
-        const out=new THREE.Vector3().subVectors(HANDOFF,shoeMouth).setY(0).normalize();
-        await Promise.all([moveHand(L,HANDOFF.clone(),360*quick,out,0.008),meet]);           // slid out of the shoe, into her right hand
-        m.userData.held=Rh;
-        moveHand(L,REST.L,460*quick,new THREE.Vector3(0,0,1),0.02,false);
-        const yaw0=m.rotation.y,dir=new THREE.Vector3().subVectors(job.pos,HANDOFF).setY(0).normalize();
-        const turn=tween(560*quick,k=>{m.rotation.y=yaw0+(job.yaw-yaw0)*k;});
-        const face=job.up&&!m.userData.leaving?sleep(160*quick).then(()=>setFace(m,true,360*quick)):Promise.resolve();
-        await Promise.all([moveHand(Rh,job.pos.clone().add(new THREE.Vector3(0,0.014,0)),560*quick,dir,0.03),turn,face]);
-        m.userData.held=null;const from=m.position.clone();
-        await tween(160,k=>{m.position.lerpVectors(from,job.pos,k);},easeOut);
+        const to=job.pos.clone(),mid=SHOE_GRAB.clone().lerp(to,0.5).setY(TABLE_Y+0.055);
+        const toShoe=0.3;                                     // video: 0.3 s back to the shoe, 0.5 s out to the spot
+        const yaw0=0.75;let from=null;
+        await sweep(R,[
+          {p:SHOE_GRAB,t:toShoe,at:()=>{m.visible=true;m.userData.held=R;m.rotation.y=yaw0;}},
+          {p:mid,t:toShoe+0.26,at:()=>{if(job.up&&!m.userData.leaving)setFace(m,true,300);tween(380,k=>{m.rotation.y=yaw0+(job.yaw-yaw0)*k;});}},
+          {p:up(to,0.016),t:toShoe+0.5,at:()=>{m.userData.held=null;from=m.position.clone();tween(140,k=>{m.position.lerpVectors(from,job.pos,k);},easeOut);}},
+        ]);
         m.rotation.y=job.yaw;m.userData.placed=true;m.userData.target=job.pos.clone();m.userData.yaw=job.yaw;
-        if(m.userData.leaving)queueCollect([m]);            // it left play while in her hand: clear it straight away
+        if(!job.up){arm.L.busy++;try{await sweep(arm.L,[{p:up(job.pos.clone().add(new THREE.Vector3(0.07,0,0)),0.02),t:0.4},{p:SHOE_TOP.clone(),t:0.85}]);}finally{arm.L.busy--;}}   // squares up the hole card
+        if(m.userData.leaving)queueCollect([m]);
       }finally{m.userData.held=null;}
     });
   }
@@ -564,30 +577,26 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     if(m.userData.leaving||m.userData.faceUp)return;
     await right(async()=>{
       const at=m.userData.target.clone();
-      await moveHand(arm.R,at.clone().add(new THREE.Vector3(0,0.014,0)),440,null,0.04);
-      m.userData.held=arm.R;
-      await moveHand(arm.R,at.clone().add(new THREE.Vector3(0,0.06,0)),200,null,0);       // lift it
-      await setFace(m,true,300);                                                             // turn it over in her hand
-      await moveHand(arm.R,at.clone().add(new THREE.Vector3(0,0.014,0)),200,null,0);
-      m.userData.held=null;m.position.copy(at);
+      await sweep(arm.R,[{p:up(at,0.03),t:0.36,at:()=>{m.userData.held=arm.R;}},
+                         {p:up(at,0.07),t:0.56,at:()=>setFace(m,true,320)},
+                         {p:up(at,0.016),t:0.9,at:()=>{m.userData.held=null;const f=m.position.clone();tween(120,k=>m.position.lerpVectors(f,at,k));}}]);
     });
   }
   let discardCount=0;
   async function clearCards(cards){
     cards=cards.filter(m=>m.parent);if(!cards.length)return;
     await right(async()=>{
-      const groups=[cards.filter(m=>!m.userData.dealer),cards.filter(m=>m.userData.dealer)].filter(g=>g.length),held=[];
-      try{
-        for(const g of groups){
-          const c=new THREE.Vector3();g.forEach(m=>c.add(m.position));c.divideScalar(g.length);
-          await moveHand(arm.R,c.setY(TABLE_Y+0.016),480,null,0.05);
-          g.forEach(m=>{m.userData.held=arm.R;held.push(m);});held.forEach((m,i)=>{m.userData.heldOff=i*0.0008;});   // scooped into one pile
-          if(!g[0].userData.dealer)await moveHand(arm.R,GATHER.clone(),420,null,0.012);                               // drawn in towards her
-        }
-        await moveHand(arm.R,DISCARD_POS.clone().add(new THREE.Vector3(0,0.075,0)),620,null,0.08);
-        held.forEach(m=>setFace(m,false,200));await sleep(200);
+      const yours=cards.filter(m=>!m.userData.dealer),hers=cards.filter(m=>m.userData.dealer),held=[];
+      const centre=g=>{const c=new THREE.Vector3();g.forEach(m=>c.add(m.position));return c.divideScalar(g.length);};
+      const take=g=>()=>{g.forEach(m=>{setFace(m,false,240);m.userData.held=arm.R;held.push(m);});held.forEach((m,i)=>{m.userData.heldOff=i*0.0008;});};
+      const keys=[];let t=0;
+      if(yours.length){t+=0.42;keys.push({p:up(centre(yours),0.02),t,at:take(yours)});t+=0.12;keys.push({p:up(centre(yours),0.035),t});}
+      if(hers.length){t+=0.45;keys.push({p:up(centre(hers),0.02),t,at:take(hers)});t+=0.12;keys.push({p:up(centre(hers),0.04),t});}
+      t+=0.55;keys.push({p:DISCARD_POS.clone().add(new THREE.Vector3(0.02,0.085,0.02)),t,at:()=>{
         discardCount+=held.length;discardPile.visible=true;discardPile.scale.y=Math.min(90,discardCount*0.5);discardPile.position.y=discardPile.scale.y*0.0005;
-      }finally{for(const m of cards){m.userData.held=null;scene.remove(m);meshes.delete(m.userData.key);}}
+        for(const m of cards){m.userData.held=null;scene.remove(m);meshes.delete(m.userData.key);}}});
+      t+=0.5;keys.push({p:REST.R.clone(),t});
+      try{await sweep(arm.R,keys);}finally{for(const m of cards){m.userData.held=null;scene.remove(m);meshes.delete(m.userData.key);}}
     });
   }
   function sync(){
@@ -616,20 +625,18 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
 
   /* ---------- chips on the betting circles ---------- */
   const stacks=new Map();
-  const RACK_POS=new THREE.Vector3(0,TABLE_Y+0.04,EDGE_Z-TABLE_D+0.1), PLAYER_POS=arcPt(R+0.16,SEAT_A,TABLE_Y+0.1);
+  const RACK_POS=new THREE.Vector3(0.03,TABLE_Y+0.04,0.31), PLAYER_POS=arcPt(R+0.16,SEAT_A,TABLE_Y+0.1);
   function queueChip(job){queue('chip',()=>right(async()=>{
       const a=arm.R;
       if(job.type==='take'){
-        await moveHand(a,job.stack.position.clone().setY(TABLE_Y+0.03),480,null,0.05);
-        job.stack.userData.held=a;
-        await moveHand(a,RACK_POS.clone().setY(TABLE_Y+0.05),560,null,0.07);
-        scene.remove(job.stack);stacks.delete(job.key);
+        const at=job.stack.position.clone();
+        await sweep(a,[{p:up(at.clone().lerp(RACK_POS,0.4),0.07),t:0.5},{p:up(at,0.03),t:0.95},{p:up(at,0.025),t:1.3,at:()=>{job.stack.userData.held=a;}},
+                       {p:up(at.clone().lerp(RACK_POS,0.5),0.08),t:1.75},{p:up(RACK_POS,0.05),t:2.1,at:()=>{scene.remove(job.stack);stacks.delete(job.key);}},{p:REST.R.clone(),t:2.6}]);
       }else{
         if(job.stack.userData.leaving){scene.remove(job.stack);return;}
-        await moveHand(a,RACK_POS.clone().setY(TABLE_Y+0.04),440,null,0.05);
-        job.stack.visible=true;job.stack.userData.held=a;
-        await moveHand(a,job.to.clone().setY(TABLE_Y+0.03),600,null,0.07);
-        job.stack.userData.held=null;job.stack.position.copy(job.to);
+        await sweep(a,[{p:up(RACK_POS,0.05),t:0.4,at:()=>{job.stack.visible=true;job.stack.userData.held=a;}},{p:up(RACK_POS.clone().lerp(job.to,0.5),0.08),t:0.85},
+                       {p:up(job.to,0.03),t:1.3},{p:up(job.to,0.025),t:1.65,at:()=>{job.stack.userData.held=null;const f=job.stack.position.clone();tween(150,k=>job.stack.position.lerpVectors(f,job.to,k));}},
+                       {p:REST.R.clone(),t:2.2}]);
       }}));}
   function buildStack(amount){
     const grp=new THREE.Group();let left=Math.round(amount/SCv),n=0;
