@@ -347,7 +347,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       fingers:{index:fingerBones(P,'Index'),thumb:fingerBones(P,'Thumb'),others:['Middle','Ring','Pinky'].map(n=>fingerBones(P,n))},
       shoulder0:wp(u),busy:0,point:0,down:0};}
   // resting: hands flat on the felt either side of the chip rack, as in the video
-  const REST={L:new THREE.Vector3(0.36,TABLE_Y+0.012,EDGE_Z+0.1),R:new THREE.Vector3(-0.38,TABLE_Y+0.012,EDGE_Z+0.07)};
+  const REST={L:new THREE.Vector3(0.37,TABLE_Y+0.012,EDGE_Z+0.1),R:new THREE.Vector3(-0.42,TABLE_Y+0.012,EDGE_Z-0.01)};
   for(const s of['R','L'])arm[s].target.copy(REST[s]);
   const _q=new THREE.Quaternion(),_qa=new THREE.Quaternion(),_qb=new THREE.Quaternion(),_pq=new THREE.Quaternion(),_a=new THREE.Vector3(),_b=new THREE.Vector3();
   const UP=new THREE.Vector3(0,1,0),DOWN=new THREE.Vector3(0,-1,0);
@@ -475,59 +475,91 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const FAN=CW*0.32;                                      // each card shows a strip of the one under it
   function handSpot(i,n){const a=SEAT_A-((n-1)/2-i)*0.44;return arcPt(SEAT_R-0.115,a,TABLE_Y);}
   function chipSpot(i,n){const a=SEAT_A-((n-1)/2-i)*0.44;return arcPt(SEAT_R,a,TABLE_Y);}
+  const DEALER_SPOT=new THREE.Vector3(-0.43,TABLE_Y,EDGE_Z+0.25);
   function layout(){
     // where every visible card should be, from the game state
     const out=[];
     const dc=(S.dealer&&S.dealer.cards)||[];
-    const dYaw=Math.atan2(CARD_EYE[0],CARD_EYE[1]-(EDGE_Z+0.08)),dRow=new THREE.Vector3(1,0,0).applyAxisAngle(UP,dYaw);
-    dc.forEach((c,j)=>out.push({card:c,pos:new THREE.Vector3(0,TABLE_Y+0.002+j*0.0006,EDGE_Z+0.08).addScaledVector(dRow,(j-(dc.length-1)/2)*FAN*1.6),yaw:dYaw,up:!(j===1&&S.dealer.hole),dealer:true}));
+    // the dealer's cards: a row that starts just in front of the rack's left end and grows to the right, as in the video
+    const dYaw=Math.atan2(CARD_EYE[0]-DEALER_SPOT.x,CARD_EYE[1]-DEALER_SPOT.z),dRow=new THREE.Vector3(1,0,0).applyAxisAngle(UP,dYaw);
+    dc.forEach((c,j)=>out.push({card:c,pos:DEALER_SPOT.clone().setY(TABLE_Y+0.002+j*0.0006).addScaledVector(dRow,j*FAN*1.25),yaw:dYaw,up:!(j===1&&S.dealer.hole),dealer:true}));
     const hs=S.hands||[];
     hs.forEach((h,i)=>{const sp=handSpot(i,hs.length),yaw=Math.atan2(CARD_EYE[0]-sp.x,CARD_EYE[1]-sp.z),n=h.cards.length;
       h.cards.forEach((c,j)=>{const off=new THREE.Vector3((j-(n-1)/2)*FAN,0,0).applyAxisAngle(UP,yaw);
         out.push({card:c,pos:sp.clone().add(off).setY(TABLE_Y+0.002+j*0.0006),yaw:yaw+(h.doubled&&j===2?Math.PI/2:0),up:true,hand:i});});});
     return out;
   }
-  // The dealer's left hand does one thing at a time, in order: deal a card, sweep a hand, deal the next...
-  // A single queue (not two loops waiting on each other) so a round that ends early, e.g. on a blackjack,
-  // can never leave the two jobs waiting for each other.
-  let leftQ=Promise.resolve(),dealsPending=0,collectsPending=0;
-  const leftDo=fn=>(leftQ=leftQ.then(fn).catch(e=>console.warn('3D dealer',e)));
-  let dealing=false,collecting=false;                      // read by the pose code: is the left hand at work?
-  const updFlags=()=>{dealing=dealsPending>0;collecting=collectsPending>0;};
-  function queueDeal(job){dealsPending++;updFlags();leftDo(()=>dealOne(job)).then(()=>{dealsPending--;updFlags();sync();});}
-  function queueCollect(cards){collectsPending++;updFlags();leftDo(()=>collectOne(cards)).then(()=>{collectsPending--;updFlags();});}
+  /* ---------- the dealer's work, as in the reference video, one action at a time and in order ----------
+     deal:   the left hand slides a card out of the shoe and hands it to the right hand, which carries it to its spot
+             (turning it face up on the way unless it is the hole card)
+     reveal: the right hand lifts the hole card, turns it over and lays it back
+     chips:  the right hand pays from the rack or takes a lost bet back to it
+     clear:  the right hand scoops your cards, draws them in, adds the dealer's, and carries the pile to the discard holder */
+  let dq=Promise.resolve(),pending={deal:0,clear:0,chip:0,reveal:0};
+  let dealing=false,collecting=false,chipping=false;
+  const updFlags=()=>{dealing=pending.deal+pending.reveal>0;collecting=pending.clear>0;chipping=pending.chip>0;};
+  function queue(kind,fn){pending[kind]++;updFlags();const r=dq.then(fn).catch(e=>console.warn('3D dealer',e)).then(()=>{pending[kind]--;updFlags();});dq=r;return r;}
+  const HANDOFF=new THREE.Vector3(0.24,TABLE_Y+0.03,EDGE_Z+0.12);       // where the card passes from left hand to right
+  const GATHER=new THREE.Vector3(0.05,TABLE_Y+0.02,EDGE_Z+0.17);        // where she draws your cards in
+  const both=f=>{arm.L.busy++;arm.R.busy++;return Promise.resolve().then(f).finally(()=>{arm.L.busy--;arm.R.busy--;});};
+  const right=f=>{arm.R.busy++;return Promise.resolve().then(f).finally(()=>{arm.R.busy--;});};
+  function queueDeal(job){queue('deal',()=>dealOne(job)).then(()=>sync());}
+  function queueCollect(cards){queue('clear',()=>clearCards(cards));}
+  function queueReveal(m){queue('reveal',()=>revealCard(m));}
   async function dealOne(job){
-    const m=job.mesh;
+    const m=job.mesh,L=arm.L,Rh=arm.R;
     if(m.userData.leaving){scene.remove(m);meshes.delete(m.userData.key);return;}   // the round ended before this card was dealt
-    const fast=dealsPending>3?0.8:1,a=arm.L;a.busy++;   // an unhurried pace; only a long queue speeds her up a little
-    try{
-      const toShoe=new THREE.Vector3().subVectors(shoeMouth,a.wrist).setY(0).normalize();
-      await moveHand(a,shoeMouth.clone().add(new THREE.Vector3(0,0.03,0)),300*fast,toShoe,0.05);
-      m.visible=true;m.userData.held=a;m.rotation.y=0.75;
-      const dir=new THREE.Vector3().subVectors(job.pos,shoeMouth).setY(0).normalize();
-      await moveHand(a,job.pos.clone().add(new THREE.Vector3(0,0.012,0)),620*fast,dir,0.006);
-      m.userData.held=null;
-      const from=m.position.clone(),yaw0=m.rotation.y;
-      moveHand(a,REST.L,560*fast,new THREE.Vector3(0,0,1),0.03);
-      const slide=tween(220*fast,k=>{m.position.lerpVectors(from,job.pos,k);m.rotation.y=yaw0+(job.yaw-yaw0)*k;},easeOut);
-      const turn=job.up&&!m.userData.leaving?setFace(m,true,340*fast):Promise.resolve();
-      await Promise.all([slide,turn]);
-      m.userData.placed=true;m.userData.target=job.pos.clone();m.userData.yaw=job.yaw;
-      if(m.userData.leaving)queueCollect([m]);            // it left play while in her hand: sweep it straight away
-    }finally{m.userData.held=null;a.busy--;}
+    const quick=pending.deal>3?0.8:1;
+    await both(async()=>{
+      try{
+        const toShoe=new THREE.Vector3().subVectors(shoeMouth,L.wrist).setY(0).normalize();
+        const meet=moveHand(Rh,HANDOFF.clone().add(new THREE.Vector3(-0.05,0,0.02)),420*quick,new THREE.Vector3(1,0,0.6),0.03);
+        await moveHand(L,shoeMouth.clone().add(new THREE.Vector3(0,0.03,0)),260*quick,toShoe,0.03);
+        m.visible=true;m.userData.held=L;m.rotation.y=0.75;
+        const out=new THREE.Vector3().subVectors(HANDOFF,shoeMouth).setY(0).normalize();
+        await Promise.all([moveHand(L,HANDOFF.clone(),360*quick,out,0.008),meet]);           // slid out of the shoe, into her right hand
+        m.userData.held=Rh;
+        moveHand(L,REST.L,460*quick,new THREE.Vector3(0,0,1),0.02);
+        const yaw0=m.rotation.y,dir=new THREE.Vector3().subVectors(job.pos,HANDOFF).setY(0).normalize();
+        const turn=tween(560*quick,k=>{m.rotation.y=yaw0+(job.yaw-yaw0)*k;});
+        const face=job.up&&!m.userData.leaving?sleep(160*quick).then(()=>setFace(m,true,360*quick)):Promise.resolve();
+        await Promise.all([moveHand(Rh,job.pos.clone().add(new THREE.Vector3(0,0.014,0)),560*quick,dir,0.03),turn,face]);
+        m.userData.held=null;const from=m.position.clone();
+        await tween(160,k=>{m.position.lerpVectors(from,job.pos,k);},easeOut);
+        m.rotation.y=job.yaw;m.userData.placed=true;m.userData.target=job.pos.clone();m.userData.yaw=job.yaw;
+        if(m.userData.leaving)queueCollect([m]);            // it left play while in her hand: clear it straight away
+      }finally{m.userData.held=null;}
+    });
+  }
+  async function revealCard(m){
+    if(m.userData.leaving||m.userData.faceUp)return;
+    await right(async()=>{
+      const at=m.userData.target.clone();
+      await moveHand(arm.R,at.clone().add(new THREE.Vector3(0,0.014,0)),440,null,0.04);
+      m.userData.held=arm.R;
+      await moveHand(arm.R,at.clone().add(new THREE.Vector3(0,0.06,0)),200,null,0);       // lift it
+      await setFace(m,true,300);                                                             // turn it over in her hand
+      await moveHand(arm.R,at.clone().add(new THREE.Vector3(0,0.014,0)),200,null,0);
+      m.userData.held=null;m.position.copy(at);
+    });
   }
   let discardCount=0;
-  async function collectOne(cards){
-    const a=arm.L;a.busy++;
-    try{
-      const c=new THREE.Vector3();cards.forEach(m=>c.add(m.position));c.divideScalar(cards.length);
-      cards.forEach(m=>setFace(m,false,260));
-      await moveHand(a,c.clone().setY(TABLE_Y+0.02),440,null,0.05);
-      cards.forEach((m,i)=>{m.userData.held=a;m.userData.heldOff=i*0.0007;});
-      await moveHand(a,DISCARD_POS.clone().add(new THREE.Vector3(0,0.06,0)),560,null,0.07);
-      discardCount+=cards.length;discardPile.visible=true;discardPile.scale.y=Math.min(90,discardCount*0.5);discardPile.position.y=discardPile.scale.y*0.0005;
-      await moveHand(a,REST.L,460,null,0.03);
-    }finally{for(const m of cards){scene.remove(m);meshes.delete(m.userData.key);}a.busy--;}
+  async function clearCards(cards){
+    cards=cards.filter(m=>m.parent);if(!cards.length)return;
+    await right(async()=>{
+      const groups=[cards.filter(m=>!m.userData.dealer),cards.filter(m=>m.userData.dealer)].filter(g=>g.length),held=[];
+      try{
+        for(const g of groups){
+          const c=new THREE.Vector3();g.forEach(m=>c.add(m.position));c.divideScalar(g.length);
+          await moveHand(arm.R,c.setY(TABLE_Y+0.016),480,null,0.05);
+          g.forEach(m=>{m.userData.held=arm.R;held.push(m);});held.forEach((m,i)=>{m.userData.heldOff=i*0.0008;});   // scooped into one pile
+          if(!g[0].userData.dealer)await moveHand(arm.R,GATHER.clone(),420,null,0.012);                               // drawn in towards her
+        }
+        await moveHand(arm.R,DISCARD_POS.clone().add(new THREE.Vector3(0,0.075,0)),620,null,0.08);
+        held.forEach(m=>setFace(m,false,200));await sleep(200);
+        discardCount+=held.length;discardPile.visible=true;discardPile.scale.y=Math.min(90,discardCount*0.5);discardPile.position.y=discardPile.scale.y*0.0005;
+      }finally{for(const m of cards){m.userData.held=null;scene.remove(m);meshes.delete(m.userData.key);}}
+    });
   }
   function sync(){
     const want=layout(),seen=new Set();
@@ -540,7 +572,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
         continue;
       }
       if(!m.userData.placed)continue;
-      if(m.userData.faceUp!==w.up)setFace(m,w.up,320);
+      if(m.userData.faceUp!==w.up){if(w.dealer&&w.up){if(!m.userData.revealQueued){m.userData.revealQueued=true;queueReveal(m);}}else setFace(m,w.up,320);}
       if(m.userData.target.distanceTo(w.pos)>0.002||Math.abs(m.userData.yaw-w.yaw)>0.01){   // a split moves a card to a new hand
         const from=m.position.clone(),y0=m.rotation.y,to=w.pos.clone(),y1=w.yaw;m.userData.target=to;m.userData.yaw=y1;
         tween(320,k=>{m.position.lerpVectors(from,to,k);m.rotation.y=y0+(y1-y0)*k;});
@@ -549,33 +581,27 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     const gone={p:[],d:[]};
     for(const[k,m]of meshes){if(seen.has(k)||m.userData.leaving)continue;
       m.userData.leaving=true;if(m.userData.placed)gone[m.userData.dealer?'d':'p'].push(m);}   // not yet dealt: her queue drops or sweeps it
-    for(const g of[gone.p,gone.d])if(g.length)queueCollect(g);
+    if(gone.p.length||gone.d.length)queueCollect([...gone.p,...gone.d]);
     syncChips();
   }
 
   /* ---------- chips on the betting circles ---------- */
   const stacks=new Map();
   const RACK_POS=new THREE.Vector3(0,TABLE_Y+0.04,EDGE_Z-TABLE_D+0.1), PLAYER_POS=arcPt(R+0.16,SEAT_A,TABLE_Y+0.1);
-  const chipJobs=[];let chipping=false;
-  async function runChips(){
-    if(chipping)return;chipping=true;
-    while(chipJobs.length){
-      const job=chipJobs.shift(),a=arm.R;a.busy++;
+  function queueChip(job){queue('chip',()=>right(async()=>{
+      const a=arm.R;
       if(job.type==='take'){
         await moveHand(a,job.stack.position.clone().setY(TABLE_Y+0.03),480,null,0.05);
         job.stack.userData.held=a;
         await moveHand(a,RACK_POS.clone().setY(TABLE_Y+0.05),560,null,0.07);
         scene.remove(job.stack);stacks.delete(job.key);
       }else{
+        if(job.stack.userData.leaving){scene.remove(job.stack);return;}
         await moveHand(a,RACK_POS.clone().setY(TABLE_Y+0.04),440,null,0.05);
         job.stack.visible=true;job.stack.userData.held=a;
         await moveHand(a,job.to.clone().setY(TABLE_Y+0.03),600,null,0.07);
         job.stack.userData.held=null;job.stack.position.copy(job.to);
-      }
-      a.busy--;
-    }
-    chipping=false;
-  }
+      }}));}
   function buildStack(amount){
     const grp=new THREE.Group();let left=Math.round(amount/SCv),n=0;
     for(const v of[1000,500,100,25,5]){while(left>=v&&n<24){const c=chipMesh(v);c.position.y=CHIP_H*(n+.5);c.rotation.y=rng()*6;
@@ -592,12 +618,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       if(s&&s.userData.amount!==w.amount){scene.remove(s);stacks.delete(k);s=null;}
       if(!s){s=buildStack(w.amount);s.userData.amount=w.amount;stacks.set(k,s);
         const to=w.pos.clone().setY(TABLE_Y+0.001);
-        if(w.from){s.position.copy(w.from);s.visible=false;chipJobs.push({type:'pay',stack:s,to});runChips();}
+        if(w.from){s.position.copy(w.from);s.visible=false;queueChip({type:'pay',stack:s,to});}
         else s.position.copy(to);}
     }
     for(const[k,s]of stacks){if(want.has(k)||s.userData.leaving)continue;s.userData.leaving=true;
       const lost=hs.some((h,i)=>('h'+i)===k&&(h.outcome==='lose'||h.outcome==='bust'));
-      if(lost){chipJobs.push({type:'take',stack:s,key:k});runChips();continue;}
+      if(lost){queueChip({type:'take',stack:s,key:k});continue;}
       const f=s.position.clone(),to=PLAYER_POS.clone();     // your winnings come back to you
       s.userData.held=null;tween(480,q=>{s.position.lerpVectors(f,to,q);s.position.y+=Math.sin(Math.PI*q)*0.06;s.scale.setScalar(1-q*0.6);}).then(()=>{scene.remove(s);stacks.delete(k);});}
   }
@@ -619,15 +645,20 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   function syncLabels(){
     const used=new Set(),hv=g('handValue');if(!hv)return;
     const dc=(S.dealer&&S.dealer.cards)||[];
-    const placed=dc.length&&dc.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed;});
+    const placed=dc.length&&!pending.reveal&&dc.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed;});
     if(placed){const vis=S.dealer.hole?dc.slice(0,1):dc,v=hv(vis);
       const dOut=!S.dealer.hole&&v.total>21?'<span class="out o-bust">BUST</span>':'';
-      placeLabel('d',new THREE.Vector3((dc.length-1)/2*FAN*1.6+CW*0.5+0.03,TABLE_Y,EDGE_Z+0.08+CH*0.25),`${dOut}<span class="tot${v.total>21?' t-bust':''}">${v.total}</span>`);used.add('d');}
+      // as in the video: the total in a bubble beside the dealer's row, a BUST tag above it
+      const ms=dc.map(c=>meshes.get(c.__w3d)),first=ms[0].userData.target,last=ms[ms.length-1].userData.target,row=last.clone().sub(first);
+      const dir=row.lengthSq()>1e-6?row.clone().normalize():new THREE.Vector3(Math.cos(ms[0].userData.yaw),0,-Math.sin(ms[0].userData.yaw));
+      placeLabel('d',last.clone().addScaledVector(dir,CW*0.5+0.035).add(new THREE.Vector3(0,0,CH*0.2)),`<span class="tot${v.total>21?' t-bust':''}">${v.total}</span>`);used.add('d');
+      if(dOut){placeLabel('do',first.clone().lerp(last,0.5).add(new THREE.Vector3(0,0,-CH*0.62)),dOut);used.add('do');}}
+    const dealerDone=!pending.deal&&!pending.reveal&&dc.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed&&m.userData.faceUp===!(c===dc[1]&&S.dealer.hole);});   // results only once her cards are down
     (S.hands||[]).forEach((h,i,hs)=>{
       const ok=h.cards.length&&h.cards.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed;});
       if(!ok)return;const v=hv(h.cards),sp=chipSpot(i,hs.length);
       const act=S.phase==='player'&&i===S.active&&hs.length>1;
-      const o=h.outcome&&OUT[h.outcome]?`<span class="out o-${h.outcome}">${OUT[h.outcome]}</span>`:'';
+      const o=h.outcome&&OUT[h.outcome]&&(h.outcome==='bust'||dealerDone)?`<span class="out o-${h.outcome}">${OUT[h.outcome]}</span>`:'';
       const tcls=h.outcome==='win'||h.outcome==='bj'?' t-win':v.total>21?' t-bust':'';
       placeLabel('h'+i,handSpot(i,hs.length).add(new THREE.Vector3((h.cards.length-1)/2*FAN+CW*0.5+0.03,0,CH*0.25)),`<span class="tot${act?' act':''}${tcls}">${v.total}</span>`);
       if(o){placeLabel('ho'+i,handSpot(i,hs.length).add(new THREE.Vector3(-(h.cards.length-1)/2*FAN-CW*0.5-0.05,0,0)),o);used.add('ho'+i);}
@@ -783,7 +814,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     }
     // as in the video the round clears itself, once the dealer has finished dealing and paying and you've had a moment to see it;
     // Autobet puts the same bet straight back in and deals
-    if(dealsPending||collectsPending||chipping)busyAt=now;
+    if(pending.deal||pending.clear||pending.chip||pending.reveal)busyAt=now;
     if(ph==='settle'&&now-settleAt>3500&&now-busyAt>2200){settleAt=Infinity;
       if(S.autoBet&&last>=min&&last<=S.bankroll)call('dealSameBet');else{call('nextRound');S.bet=0;call('render');}}
   }
@@ -875,10 +906,10 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       const want=pointing?1:0;a.point+=(want-a.point)*k;a.down+=(want-a.down)*k;
     }
     { const a=arm.L;if(!a.busy){const onShoe=S.phase==='player';
-        a.target.lerp(onShoe?SHOE_TOP:REST.L,1-Math.exp(-dt*4));} }
+        a.target.lerp(onShoe?SHOE_TOP:REST.L,1-Math.exp(-dt*4));}}   // beside the shoe, or on it while you decide
     leanTowards(dt);
     { const you=cam.position.clone();                    // into the camera: eye contact with you, whichever view you use
-      const tgt=dealing||collecting?arm.L.target:(arm.R.busy?arm.R.target:(S.phase==='player'||S.phase==='bet'||S.phase==='insurance'?you:null));
+      const tgt=arm.R.busy?arm.R.target:(arm.L.busy?arm.L.target:(S.phase==='player'||S.phase==='bet'||S.phase==='insurance'?you:null));
       turnHead(tgt,dt,reduced()?0:now); }
     solveArm(arm.R);solveArm(arm.L);
     // whatever a hand is holding follows it
