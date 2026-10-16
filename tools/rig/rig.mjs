@@ -15,6 +15,18 @@ const J=[];const jIndex={};
 const joint=(name,pos,parent)=>{jIndex[name]=J.length;J.push({name,pos,parent});};
 joint('Hips',[0,0.98,-0.02],null);joint('Spine',[0,1.08,-0.025],'Hips');joint('Spine1',[0,1.20,-0.03],'Spine');joint('Spine2',[0,1.33,-0.03],'Spine1');
 joint('Neck',[0,1.55,-0.035],'Spine2');joint('Head',[0,1.665,-0.02],'Neck');joint('HeadTop_End',[0,1.86,-0.02],'Head');
+const FACE={};
+{ const centre=name=>{const P=prims.find(p=>p.node.startsWith(name));const c=[0,0,0];for(let i=0;i<P.n;i++)for(let k=0;k<3;k++)c[k]+=P.pos[i*3+k]/P.n;return c;};
+  const HV=[];for(let i=0;i<HEADM.n;i++)HV.push(vtx(HEADM,i));
+  for(const[sx,P0]of[[1,'Left'],[-1,'Right']]){
+    const eye=centre(P0==='Left'?'eye_L':'eye_R');
+    // mouth corner: where the lips meet at the side, on the skin surface
+    const x=0.0235*sx,y=1.697;const near=HV.filter(v=>Math.abs(v[0]-x)<0.003&&Math.abs(v[1]-y)<0.003);
+    const corner=[x,y,Math.max(...near.map(v=>v[2]))];
+    FACE[P0]={eye,corner};
+    joint(P0+'Eye',eye,'Head');joint(P0+'Lid',eye,'Head');joint('Mouth'+P0,corner,'Head');
+    console.log(P0,'eye',eye.map(v=>v.toFixed(4)),'mouth corner',corner.map(v=>v.toFixed(4)));}
+}
 const sideInfo={};
 for(const [sx,P0] of [[1,'Left'],[-1,'Right']]){
   const V=[];for(let i=0;i<ARM.n;i++){const v=vtx(ARM,i);if(v[0]*sx>0)V.push(v);}
@@ -96,11 +108,21 @@ function torsoWeights(v){
   spineW(m,v[1],1-a-sh);addW(m,P0+'Shoulder',sh);addW(m,P0+'Arm',a);
   return m;
 }
-const headWeights=v=>{const m=jw();spineW(m,v[1]);return m;};
+const EYE_R=0.0175;
+function faceWeights(v){   // lids and mouth corners take a share of the head's skin
+  const P0=v[0]>0?'Left':'Right',F=FACE[P0];let lid=0,mouth=0;
+  const de=len(sub(v,F.eye));
+  if(v[2]>F.eye[2]-0.004&&v[1]>F.eye[1]-0.003)lid=sstep(F.eye[1]-0.003,F.eye[1]+0.004,v[1])*(1-sstep(EYE_R+0.0005,EYE_R+0.005,de));
+  const dm=len(sub(v,F.corner));if(v[2]>0.03&&v[1]<1.715)mouth=Math.pow(1-sstep(0.0,0.024,dm),1.3);
+  return {lid,mouth,P0};
+}
+const headWeights=v=>{const m=jw();const f=faceWeights(v),k=1-f.lid-f.mouth;spineW(m,v[1],Math.max(0,k));addW(m,f.P0+'Lid',f.lid);addW(m,'Mouth'+f.P0,f.mouth);return m;};
+const lashWeights=v=>{const m=jw();const P0=v[0]>0?'Left':'Right';const up=sstep(FACE[P0].eye[1]-0.002,FACE[P0].eye[1]+0.002,v[1]);addW(m,P0+'Lid',up);addW(m,'Head',1-up);return m;};
 const skirtWeights=v=>{const m=jw();spineW(m,v[1]);return m;};
 const rigid=n=>()=>{const m=jw();addW(m,n,1);return m;};
 const SKIRT=P('Stretch_Denim_FCL1PSD003_FRONT_4181');
 const weightFn=p=>p===ARM?armWeights:p===TORSO||p===SHIRT?torsoWeights:p===HEADM?headWeights:p===SKIRT?skirtWeights:
+  /^eye_L/.test(p.node)?rigid('LeftEye'):/^eye_R/.test(p.node)?rigid('RightEye'):/^eyelash/.test(p.node)?lashWeights:
   /hair|eye|tooth/.test(p.node)?rigid('Head'):rigid('Hips');
 
 /* ---------- rebuild: bake to metres, add the skin ---------- */

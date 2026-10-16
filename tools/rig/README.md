@@ -3,7 +3,7 @@
 `assets/dealer-woman.glb` started as a static, unrigged model. These scripts give it a skeleton the 3D table's arm IK can drive.
 
 1. `node rig.mjs woman.glb woman-rigged.glb`
-   - Fits a Mixamo-style skeleton (spine, arms, all five fingers) to her A-pose from the mesh itself: wrist at the arm's narrowest point, elbow 56% of the way down, finger chains from the hand's vertex layout.
+   - Fits a Mixamo-style skeleton (spine, arms, all five fingers, plus eyes, upper lids and mouth corners for her expression) to her A-pose from the mesh itself: wrist at the arm's narrowest point, elbow 56% of the way down, finger chains from the hand's vertex layout.
    - Writes skin weights.
    - Pushes the sleeve area out a few millimetres.
    - Lists the sleeve and torso UV triangles.

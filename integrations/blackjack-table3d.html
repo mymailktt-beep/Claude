@@ -19,6 +19,7 @@ const TABLE_D=0.12, TABLE_Y=0.96, EDGE_Z=0.22, R=0.715, FELT_HW=R;   // felt hei
 const CARD_S=2.0, CW=0.0635*CARD_S, CH=0.0889*CARD_S;   // cards a little larger than life so they read on a phone
 const CHIP_R=0.021*1.1, CHIP_H=0.0065*1.1;
 const DEALER_Z=EDGE_Z-TABLE_D-0.09;                      // she stands against the dealer's edge of the table
+const CARD_EYE=[1.691,2.082];                            // where your seat's camera is (x,z): cards turn to face it
 const SEATS=[44,90,136], SEAT_DEG=44, SEAT_A=SEAT_DEG*Math.PI/180;   // three seats as in the reference video; yours is beside the shoe
 const SEAT_R=0.598;                                        // betting circles' distance from the arc centre
 const GLOBALS={addChip:()=>addChip,SC:()=>SC,chipLabel:()=>chipLabel,MIN_BET:()=>MIN_BET,fmt:()=>fmt,reducedMotion:()=>reducedMotion,handValue:()=>handValue};
@@ -134,18 +135,17 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const faceTex=(card)=>{const key=card.rank+card.suit;if(faceCache[key])return faceCache[key];
     const col=REDS[card.suit]?'#d0101c':'#0b0b0c',sym=SYM[card.suit];
     const t=tex(canvas(TW*2,TH*2,(c,W2,H2)=>{c.scale(2,2);const w=TW,h=TH;
-      roundRect(c,2,2,w-4,h-4,22);c.fillStyle='#ffffff';c.fill();
-      c.lineWidth=2;c.strokeStyle='rgba(0,0,0,.25)';c.stroke();
-      c.fillStyle=col;c.textAlign='center';c.textBaseline='middle';
-      const idx=(rot)=>{c.save();if(rot){c.translate(w,h);c.rotate(Math.PI);}
-        c.font=`700 ${card.rank==='10'?60:76}px Arial, Helvetica, sans-serif`;c.fillText(card.rank,card.rank==='10'?40:36,48);c.font='62px Arial, Helvetica, sans-serif';c.fillText(sym,36,108);c.restore();};
-      idx(false);idx(true);
+      roundRect(c,2,2,w-4,h-4,20);c.fillStyle='#ffffff';c.fill();
+      c.lineWidth=2.5;c.strokeStyle='rgba(0,0,0,.3)';c.stroke();
+      c.fillStyle=col;c.textAlign='center';c.textBaseline='alphabetic';
+      // the corner index fills the strip each card shows when fanned: a big bold rank over its suit
+      const cond="'Roboto Condensed','Arial Narrow',Arial,sans-serif";
+      c.save();c.translate(44,118);if(card.rank==='10')c.scale(0.72,1);c.font=`700 116px ${cond}`;c.fillText(card.rank,0,0);c.restore();
+      c.font='84px Arial, Helvetica, sans-serif';c.fillText(sym,44,196);
       const art={J:artJ,Q:artQ,K:artK}[card.rank];
-      if(art){c.save();roundRect(c,72,44,w-144,h-88,6);c.clip();c.drawImage(art,72,44,w-144,h-88);c.restore();
-        c.lineWidth=2;c.strokeStyle='rgba(0,0,0,.5)';roundRect(c,72,44,w-144,h-88,6);c.stroke();}
-      else if(card.rank==='A'){c.font='150px Georgia, serif';c.fillText(sym,w/2,h/2+6);}
-      else if(PIPS[card.rank]){c.font='52px Georgia, serif';for(const[px,py]of PIPS[card.rank]){c.save();c.translate(72+(w-144)*px,44+(h-88)*py);if(py>.55)c.rotate(Math.PI);c.fillText(sym,0,0);c.restore();}}
-      else{c.font='120px Georgia, serif';c.fillText(sym,w/2,h/2);}
+      if(art){c.save();roundRect(c,92,26,w-112,h-52,8);c.clip();c.drawImage(art,92,26,w-112,h-52);c.restore();
+        c.lineWidth=2;c.strokeStyle='rgba(0,0,0,.45)';roundRect(c,92,26,w-112,h-52,8);c.stroke();}
+      else{c.textBaseline='middle';c.font='190px Arial, Helvetica, sans-serif';c.fillText(sym,w*0.6,h*0.6);}
     }));
     return faceCache[key]=t;};
   const backTex=tex(canvas(TW*2,TH*2,(c,W2,H2)=>{c.scale(2,2);const w=TW,h=TH;
@@ -425,7 +425,8 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   let nodT=-1,pointBlend=0;
   const HEAD_FWD=(()=>{dealer.updateMatrixWorld(true);const q=new THREE.Quaternion();headB.getWorldQuaternion(q);
     const dq=new THREE.Quaternion();dealer.getWorldQuaternion(dq);return new THREE.Vector3(0,0,1).applyQuaternion(dq).applyQuaternion(q.invert());})();
-  const gaze=new THREE.Vector3(0,1.4,2),_g=new THREE.Vector3();
+  const gaze=new THREE.Vector3(0,1.4,2),_g=new THREE.Vector3(),eyeB=['LeftEye','RightEye'].map(n=>bone(n)).filter(Boolean);
+  const FACE_B=[['Left',1],['Right',-1]].map(([P,sx])=>[bone(P+'Lid'),bone('Mouth'+P),sx]);
   function aimForward(b,fwdLocal,want,amount,maxAng){
     b.getWorldQuaternion(_qb);const cur=fwdLocal.clone().applyQuaternion(_qb).normalize();
     let ang=cur.angleTo(want);if(ang<1e-4)return;const k=Math.min(ang*amount,maxAng)/ang;
@@ -436,7 +437,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     let nod=0;if(nodT>=0){const t=(now-nodT)/1000;if(t>1.2)nodT=-1;else nod=Math.sin(Math.PI*Math.min(1,t/1.2))*0.25;}
     const hp=wp(headB,new THREE.Vector3()),want=gaze.clone().sub(hp).normalize();want.y-=nod;want.normalize();
     const nfwd=HEAD_FWD.clone().applyQuaternion(headB.quaternion.clone());   // the neck carries part of the turn
-    aimForward(neckB,nfwd,want,0.4,0.6);aimForward(headB,HEAD_FWD,want,1,0.9);
+    aimForward(neckB,nfwd,want,0.45,0.7);aimForward(headB,HEAD_FWD,want,1,1.1);
+    headB.quaternion.multiply(_qa.setFromAxisAngle(new THREE.Vector3(0,0,1),0.06));headB.updateMatrixWorld(true);   // a slight, friendly tilt
+    for(const e of eyeB){const ep=wp(e,new THREE.Vector3());aimForward(e,HEAD_FWD,gaze.clone().sub(ep).normalize(),1,0.22);}
+    for(const[lid,m,sx]of FACE_B){
+      if(lid){lid.quaternion.multiply(_qa.setFromAxisAngle(new THREE.Vector3(1,0,0),0.13));}
+      if(m)m.position.add(_a.set(sx*0.0022,0.0044,-0.002));}
   }
 
 
@@ -473,9 +479,10 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // where every visible card should be, from the game state
     const out=[];
     const dc=(S.dealer&&S.dealer.cards)||[];
-    dc.forEach((c,j)=>out.push({card:c,pos:new THREE.Vector3((j-(dc.length-1)/2)*FAN*1.6,TABLE_Y+0.002+j*0.0006,EDGE_Z+0.08),yaw:0,up:!(j===1&&S.dealer.hole),dealer:true}));
+    const dYaw=Math.atan2(CARD_EYE[0],CARD_EYE[1]-(EDGE_Z+0.08)),dRow=new THREE.Vector3(1,0,0).applyAxisAngle(UP,dYaw);
+    dc.forEach((c,j)=>out.push({card:c,pos:new THREE.Vector3(0,TABLE_Y+0.002+j*0.0006,EDGE_Z+0.08).addScaledVector(dRow,(j-(dc.length-1)/2)*FAN*1.6),yaw:dYaw,up:!(j===1&&S.dealer.hole),dealer:true}));
     const hs=S.hands||[];
-    hs.forEach((h,i)=>{const sp=handSpot(i,hs.length),yaw=(Math.PI/2-Math.atan2(sp.z-EDGE_Z,sp.x))*1,n=h.cards.length;
+    hs.forEach((h,i)=>{const sp=handSpot(i,hs.length),yaw=Math.atan2(CARD_EYE[0]-sp.x,CARD_EYE[1]-sp.z),n=h.cards.length;
       h.cards.forEach((c,j)=>{const off=new THREE.Vector3((j-(n-1)/2)*FAN,0,0).applyAxisAngle(UP,yaw);
         out.push({card:c,pos:sp.clone().add(off).setY(TABLE_Y+0.002+j*0.0006),yaw:yaw+(h.doubled&&j===2?Math.PI/2:0),up:true,hand:i});});});
     return out;
@@ -804,7 +811,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     { const a=arm.L;if(!a.busy){const onShoe=S.phase==='player';
         a.target.lerp(onShoe?SHOE_TOP:REST.L,1-Math.exp(-dt*4));} }
     leanTowards(dt);
-    { const you=cam.position.clone().lerp(PLAYER_POS,0.5);
+    { const you=cam.position.clone();                    // into the camera: eye contact with you, whichever view you use
       const tgt=dealing||collecting?arm.L.target:(arm.R.busy?arm.R.target:(S.phase==='player'||S.phase==='bet'||S.phase==='insurance'?you:null));
       turnHead(tgt,dt,reduced()?0:now); }
     solveArm(arm.R);solveArm(arm.L);
