@@ -2067,10 +2067,10 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     arm[s]={side:s==='L'?1:-1,u,f,h,m,i,p,target:new THREE.Vector3(),dir:new THREE.Vector3(0,0,1),wrist:new THREE.Vector3(),
       L1:wp(u).distanceTo(wp(f)),L2:wp(f).distanceTo(wp(h)),HL:wp(h).distanceTo(wp(m))+0.05,
       fingers:{index:fingerBones(P,'Index'),thumb:fingerBones(P,'Thumb'),others:['Middle','Ring','Pinky'].map(n=>fingerBones(P,n))},
-      shoulder0:wp(u),busy:0,point:0,down:0};}
+      shoulder0:wp(u),busy:0,point:0,down:0,pos:new THREE.Vector3(),vel:new THREE.Vector3()};}
   // resting: hands flat on the felt either side of the chip rack, as in the video
   const REST={L:new THREE.Vector3(0.37,TABLE_Y+0.012,EDGE_Z+0.1),R:new THREE.Vector3(-0.42,TABLE_Y+0.012,EDGE_Z-0.01)};
-  for(const s of['R','L'])arm[s].target.copy(REST[s]);
+  for(const s of['R','L']){arm[s].target.copy(REST[s]);arm[s].pos.copy(REST[s]);}
   const _q=new THREE.Quaternion(),_qa=new THREE.Quaternion(),_qb=new THREE.Quaternion(),_pq=new THREE.Quaternion(),_a=new THREE.Vector3(),_b=new THREE.Vector3();
   const UP=new THREE.Vector3(0,1,0),DOWN=new THREE.Vector3(0,-1,0);
   function setWorldQ(b,qw){b.parent.getWorldQuaternion(_pq);b.quaternion.copy(_pq.invert().multiply(qw));b.updateMatrixWorld(true);}
@@ -2091,9 +2091,9 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // the hand points away from his shoulder towards where it is going, never back along its path,
     // so the wrist turns smoothly instead of whipping round when the hand changes direction
     const S0=wp(a.u);
-    const hd=new THREE.Vector3(a.target.x-S0.x,0,a.target.z-S0.z);
+    const hd=new THREE.Vector3(a.pos.x-S0.x,0,a.pos.z-S0.z);
     if(hd.lengthSq()<1e-4)hd.set(0,0,1);hd.normalize();hd.lerp(new THREE.Vector3(0,0,1),0.35).normalize();hd.y=-0.36-2.3*a.down;hd.normalize();   // pointing: the hand tips down so the index finger points at the cards
-    const W=a.target.clone().addScaledVector(hd,-a.HL).add(new THREE.Vector3(0,0.015,0));const dirSW=W.clone().sub(S0);let d=dirSW.length();dirSW.normalize();
+    const W=a.pos.clone().addScaledVector(hd,-a.HL).add(new THREE.Vector3(0,0.015,0));const dirSW=W.clone().sub(S0);let d=dirSW.length();dirSW.normalize();
     const reach=(a.L1+a.L2)*0.995;if(d>reach){W.copy(S0).addScaledVector(dirSW,reach);d=reach;}
     d=Math.max(d,Math.abs(a.L1-a.L2)+0.02);
     const ax=(a.L1*a.L1-a.L2*a.L2+d*d)/(2*d),h=Math.sqrt(Math.max(0,a.L1*a.L1-ax*ax));
@@ -2129,19 +2129,38 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   }
   // lean in from the hips when a hand must reach far across the felt
   // lean in from the hips, and turn the shoulders, when a hand must reach far across the felt (as the video's dealer does)
-  let lean=0,twist=0;
+  // The lean is a smoothed horizontal vector (direction and amount together), and the shoulder turn a smoothed angle,
+  // both blended from how far each hand must reach: when the work passes from one hand to the other
+  // her body swings round gradually instead of flipping in a frame.
+  const leanV=new THREE.Vector3();let twist=0;const _lw=new THREE.Vector3(),_ld=new THREE.Vector3();
   function leanTowards(dt){
-    let want=0,dir=new THREE.Vector3(0,0,1),yaw=0;
-    for(const a of[arm.L,arm.R]){const d=new THREE.Vector3(a.target.x-a.shoulder0.x,0,a.target.z-a.shoulder0.z);const need=d.length()-(a.L1+a.L2+a.HL)*0.62;
-      if(need>want){want=need;dir=d.clone().normalize();yaw=Math.atan2(a.target.x,a.target.z-DEALER_Z)*Math.min(1,need/0.15);}}
-    const k=1-Math.exp(-dt*5);
-    lean+=(Math.min(1.0,Math.max(0,want)*2.4)-lean)*k;twist+=(Math.max(-0.6,Math.min(0.6,yaw*0.8))-twist)*k;
+    _lw.set(0,0,0);let yaw=0,wsum=0;
+    for(const a of[arm.L,arm.R]){_ld.set(a.pos.x-a.shoulder0.x,0,a.pos.z-a.shoulder0.z);
+      const need=Math.max(0,_ld.length()-(a.L1+a.L2+a.HL)*0.62);if(need<=0)continue;
+      _lw.addScaledVector(_ld.normalize(),Math.min(1,need*2.4));
+      const w=need;yaw+=Math.atan2(a.pos.x,a.pos.z-DEALER_Z)*Math.min(1,need/0.15)*w;wsum+=w;}
+    if(_lw.length()>1)_lw.normalize();
+    yaw=wsum>0?yaw/wsum:0;
+    const k=1-Math.exp(-dt*3);
+    leanV.lerp(_lw,k);twist+=(Math.max(-0.6,Math.min(0.6,yaw*0.8))-twist)*k;
     if(Math.abs(twist)>0.002)for(const[b,f]of[[spineB,0.3],[spine1B,0.35],[chestB,0.35]]){b.getWorldQuaternion(_qb);setWorldQ(b,_qb.premultiply(_qa.setFromAxisAngle(UP,twist*f)));}
-    if(lean<0.002)return;
-    const axis=new THREE.Vector3().crossVectors(UP,dir).normalize();
+    const lean=leanV.length();if(lean<0.002)return;
+    const axis=new THREE.Vector3().crossVectors(UP,leanV).normalize();
     for(const[b,f]of[[spineB,0.55],[spine1B,0.3],[chestB,0.15]]){b.getWorldQuaternion(_qb);setWorldQ(b,_qb.premultiply(_qa.setFromAxisAngle(axis,lean*f)));}
   }
 
+
+  // Hands never jump: each follows its commanded target on a critically damped spring with a speed limit,
+  // so a run of moves (shoe, hand-off, spot) reads as one flowing motion, the way a real dealer moves.
+  const HAND_W=10.5,HAND_VMAX=1.5,_sp=new THREE.Vector3();
+  function stepHand(a,dt){
+    for(let t=dt;t>1e-6;t-=0.004){const h=Math.min(0.004,t);
+      _sp.subVectors(a.target,a.pos).multiplyScalar(HAND_W*HAND_W).addScaledVector(a.vel,-2*HAND_W);
+      a.vel.addScaledVector(_sp,h);const v=a.vel.length();if(v>HAND_VMAX)a.vel.multiplyScalar(HAND_VMAX/v);
+      a.pos.addScaledVector(a.vel,h);}
+  }
+  const arrived=(a,tol=0.01)=>new Promise(res=>{const t0=performance.now();const chk=()=>{
+    if(reduced()||(a.pos.distanceTo(a.target)<tol&&a.vel.length()<0.25)||performance.now()-t0>900)res();else requestAnimationFrame(chk);};chk();});
   const gripPoint=(a,out)=>{const m=wp(a.m),h=wp(a.h);return out.copy(m).addScaledVector(m.sub(h).normalize(),0.03).add(new THREE.Vector3(0,-0.014,0));};
   // head: looks at a point; a nod when a hand is settled; a little breathing in the chest
   let nodT=-1,pointBlend=0;
@@ -2153,8 +2172,14 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     b.getWorldQuaternion(_qb);const cur=fwdLocal.clone().applyQuaternion(_qb).normalize();
     let ang=cur.angleTo(want);if(ang<1e-4)return;const k=Math.min(ang*amount,maxAng)/ang;
     _qa.setFromUnitVectors(cur,want);_q.identity().slerp(_qa,k);setWorldQ(b,_qb.premultiply(_q));}
+  const gazeVel=new THREE.Vector3(),GW=5.5,_gs=new THREE.Vector3();
+  function stepGaze(goal,dt){
+    for(let t=dt;t>1e-6;t-=0.004){const h=Math.min(0.004,t);
+      _gs.subVectors(goal,gaze).multiplyScalar(GW*GW).addScaledVector(gazeVel,-2*GW);gazeVel.addScaledVector(_gs,h);
+      const v=gazeVel.length(),vmax=1.2;if(v>vmax)gazeVel.multiplyScalar(vmax/v);gaze.addScaledVector(gazeVel,h);}
+  }
   function turnHead(target,dt,now){
-    _g.copy(target||_a.set(0,1.45,DEALER_Z+1.5));gaze.lerp(_g,1-Math.exp(-dt*5));
+    _g.copy(target||_a.set(0,1.45,DEALER_Z+1.5));stepGaze(_g,dt);
     chestB.getWorldQuaternion(_qb);setWorldQ(chestB,_qb.premultiply(_qa.setFromAxisAngle(new THREE.Vector3(1,0,0),Math.sin(now/1300)*0.012)));   // breathing
     let nod=0;if(nodT>=0){const t=(now-nodT)/1000;if(t>1.2)nodT=-1;else nod=Math.sin(Math.PI*Math.min(1,t/1.2))*0.25;}
     const hp=wp(headB,new THREE.Vector3()),want=gaze.clone().sub(hp).normalize();want.y-=nod;want.normalize();
@@ -2175,8 +2200,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const tween=(ms,fn,e=ease)=>new Promise(res=>{if(reduced()||ms<=0){fn(1);res();return;}tweens.add({t0:performance.now(),ms,fn,e,res});});
   // move a hand along a shallow arc, turning it gradually towards its new direction
-  const moveHand=(a,to,ms,dir,lift=0.04)=>{const from=a.target.clone(),d0=a.dir.clone(),d1=dir?dir.clone().normalize():d0.clone();
-    return tween(ms,k=>{a.target.lerpVectors(from,to,k);a.target.y+=Math.sin(Math.PI*k)*lift;a.dir.lerpVectors(d0,d1,k);if(a.dir.lengthSq()<1e-6)a.dir.copy(d1);a.dir.normalize();});};
+  const smooth=k=>k*k*k*(k*(k*6-15)+10);
+  const moveHand=(a,to,ms,dir,lift=0.04,settle=true)=>{const from=a.target.clone(),d0=a.dir.clone(),d1=dir?dir.clone().normalize():d0.clone();
+    ms*=PACE;
+    return tween(ms,k=>{a.target.lerpVectors(from,to,k);a.target.y+=Math.sin(Math.PI*k)*lift;a.dir.lerpVectors(d0,d1,k);if(a.dir.lengthSq()<1e-6)a.dir.copy(d1);a.dir.normalize();},smooth)
+      .then(()=>settle?arrived(a):null);};
+  const PACE=1.35;                                        // an unhurried, even pace
 
   /* ---------- cards ---------- */
   const cardGeo=new THREE.PlaneGeometry(CW,CH);
@@ -2241,7 +2270,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
         const out=new THREE.Vector3().subVectors(HANDOFF,shoeMouth).setY(0).normalize();
         await Promise.all([moveHand(L,HANDOFF.clone(),360*quick,out,0.008),meet]);           // slid out of the shoe, into her right hand
         m.userData.held=Rh;
-        moveHand(L,REST.L,460*quick,new THREE.Vector3(0,0,1),0.02);
+        moveHand(L,REST.L,460*quick,new THREE.Vector3(0,0,1),0.02,false);
         const yaw0=m.rotation.y,dir=new THREE.Vector3().subVectors(job.pos,HANDOFF).setY(0).normalize();
         const turn=tween(560*quick,k=>{m.rotation.y=yaw0+(job.yaw-yaw0)*k;});
         const face=job.up&&!m.userData.leaving?sleep(160*quick).then(()=>setFace(m,true,360*quick)):Promise.resolve();
@@ -2605,9 +2634,14 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   window.bjDealerPose=function(name){if(name==='dl_complete')nodT=performance.now();};
   window.__w3dSnap=true;sync();window.__w3dSnap=false;     // whatever is on the table already appears without a deal
 
-  let last=performance.now(),lastSig='';
+  let last=performance.now(),lastSig='',fpsAvg=1/60,fpsN=0,quality=2;
   renderer.setAnimationLoop(()=>{
     const now=performance.now(),dt=Math.min(.1,(now-last)/1000);last=now;
+    // keep the motion smooth on slower phones: if frames run long, render fewer pixels and softer shadows
+    if(dt>0){fpsAvg+=(dt-fpsAvg)*0.05;if(++fpsN>90&&fpsAvg>1/42&&quality>0){quality--;fpsN=0;fpsAvg=1/60;
+      if(quality===1)renderer.setPixelRatio(Math.min(1.25,window.devicePixelRatio||1));
+      else{renderer.setPixelRatio(1);key.shadow.mapSize.set(1024,1024);if(key.shadow.map){key.shadow.map.dispose();key.shadow.map=null;}}
+      cv.__w=0;}}
     const w=innerWidth,h=innerHeight;
     if(cv.__w!==w||cv.__h!==h){renderer.setSize(w,h);cv.__w=w;cv.__h=h;fitCamera();}
     for(const t of[...tweens]){const k=Math.min(1,(now-t.t0)/t.ms);t.fn(t.e(k));if(k>=1){tweens.delete(t);t.res();}}
@@ -2621,7 +2655,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       if(!a.busy){
         let goal=REST.R;
         if(pointing){const hs=S.hands||[],c=handSpot(S.active||0,hs.length||1),d=c.clone().sub(a.shoulder0).setY(0).normalize();
-          const tap=reduced()?0:Math.max(0,Math.sin(now/260))*0.012;   // a light tap towards the cards
+          const tap=reduced()?0:(0.5-0.5*Math.cos(now/420))*0.01;   // a light tap towards the cards
           goal=c.clone().addScaledVector(d,-CH*0.32).setY(TABLE_Y+0.032-tap);}
         a.target.lerp(goal,1-Math.exp(-dt*(pointing?3.5:5)));
       }
@@ -2629,9 +2663,10 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     }
     { const a=arm.L;if(!a.busy){const onShoe=S.phase==='player';
         a.target.lerp(onShoe?SHOE_TOP:REST.L,1-Math.exp(-dt*4));}}   // beside the shoe, or on it while you decide
+    stepHand(arm.R,dt);stepHand(arm.L,dt);
     leanTowards(dt);
     { const you=cam.position.clone();                    // into the camera: eye contact with you, whichever view you use
-      const tgt=arm.R.busy?arm.R.target:(arm.L.busy?arm.L.target:(S.phase==='player'||S.phase==='bet'||S.phase==='insurance'?you:null));
+      const tgt=arm.R.busy?arm.R.pos:(arm.L.busy?arm.L.pos:(S.phase==='player'||S.phase==='bet'||S.phase==='insurance'?you:null));
       turnHead(tgt,dt,reduced()?0:now); }
     solveArm(arm.R);solveArm(arm.L);
     // whatever a hand is holding follows it
