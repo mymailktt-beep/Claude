@@ -1740,7 +1740,7 @@ const CHIPS_URL='./chips-model.js';                   // the chips & cards model
 const TABLE_D=0.12, TABLE_Y=0.96, EDGE_Z=0.22, R=0.715, FELT_HW=R;   // felt height, arc centre, arc radius, half width (m)
 const CARD_S=2.0, CW=0.0635*CARD_S, CH=0.0889*CARD_S;   // cards a little larger than life so they read on a phone
 const CHIP_R=0.021*1.1, CHIP_H=0.0065*1.1;
-const DEALER_Z=EDGE_Z-TABLE_D-0.09;                      // she stands against the dealer's edge of the table
+const DEALER_X=0.12, DEALER_Y=-0.15, DEALER_Z=0.09, DEALER_YAW=0.75, DEALER_SCALE=0.92;   // seated, as in the video; placed so her shoulders land where the video dealer's do
 const CARD_EYE=[1.691,2.082];                            // where your seat's camera is (x,z): cards turn to face it
 const SEATS=[44,90,136], SEAT_DEG=44, SEAT_A=SEAT_DEG*Math.PI/180;   // three seats as in the reference video; yours is beside the shoe
 const SEAT_R=0.598;                                        // betting circles' distance from the arc centre
@@ -1926,7 +1926,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   key.shadow.mapSize.set(2048,2048);Object.assign(key.shadow.camera,{left:-2.2,right:2.2,top:2.2,bottom:-2.2,near:1,far:9});key.shadow.bias=-0.0004;key.shadow.normalBias=0.01;
   key.target.position.set(0,TABLE_Y,0.6);scene.add(key,key.target);
   const fill=new THREE.DirectionalLight(0x9ab8ff,0.55);fill.position.set(2.5,2,-1.5);scene.add(fill);
-  const face=new THREE.DirectionalLight(0xffe9d6,1.5);face.position.set(0.3,2.0,3.2);face.target.position.set(0,1.6,DEALER_Z);scene.add(face,face.target);
+  const face=new THREE.DirectionalLight(0xffe9d6,1.5);face.position.set(0.3,2.0,3.2);face.target.position.set(DEALER_X,1.5,DEALER_Z);scene.add(face,face.target);
   const lamp=new THREE.SpotLight(0xfff0d8,9,6,0.8,0.7,1.3);lamp.position.set(0,3.3,0.6);lamp.target.position.set(0,TABLE_Y,0.6);scene.add(lamp,lamp.target);
 
   /* ---------- the table: built here, in the reference video's style ---------- */
@@ -2012,6 +2012,15 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     for(const m of[seat,back,armL,armR,post])m.castShadow=true;ch.add(seat,back,armL,armR,post,foot);
     scene.add(ch);};
   SEATS.forEach(d=>chair(d));
+  // the dealer's chair: a tall black leather stool with a back, under her as she sits (as in the video)
+  { const st=new THREE.Group();st.position.set(DEALER_X,0,DEALER_Z);st.rotation.y=DEALER_YAW;scene.add(st);
+    const seatTop=0.89*DEALER_SCALE+DEALER_Y-0.07;
+    const seat=new THREE.Mesh(new RoundedBoxGeometry(0.5,0.1,0.46,4,0.045),chairMat);seat.position.set(0,seatTop-0.05,0.02);
+    const back=new THREE.Mesh(new RoundedBoxGeometry(0.52,0.62,0.13,4,0.06),chairMat);back.position.set(0,seatTop+0.3,-0.25);back.rotation.x=0.12;
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,seatTop-0.12,12),metalMat);post.position.y=(seatTop-0.12)/2+0.04;
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(0.2,0.013,8,40),metalMat);ring.rotation.x=Math.PI/2;ring.position.y=0.3;   // footrest
+    const foot=new THREE.Group();for(let k=0;k<5;k++){const leg=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.03,0.3),metalMat);leg.rotation.y=k*Math.PI*2/5;leg.position.set(Math.sin(k*Math.PI*2/5)*0.14,0.04,Math.cos(k*Math.PI*2/5)*0.14);foot.add(leg);}
+    for(const m of[seat,back,post])m.castShadow=true;st.add(seat,back,post,ring,foot); }
   // the shoe (viewer's right) and the discard holder (viewer's left)
   const acrylic=std({color:0xdfe9f2,transparent:true,opacity:.12,roughness:.05,metalness:.1,depthWrite:false});
   const SHOE_POS=new THREE.Vector3(0.37,TABLE_Y,EDGE_Z),   // its mouth where the video's is: (0.43, 0.32)
@@ -2042,16 +2051,20 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   /* ---------- the dealer: a rigged character, her arms driven by IK ---------- */
   const glbBuf=Uint8Array.from(atob((await import(DEALER_URL)).default),c=>c.charCodeAt(0)).buffer;
   const gltf=await new GLTFLoader().parseAsync(glbBuf,'');
-  const dealer=new THREE.Group();dealer.position.set(0,0,DEALER_Z);scene.add(dealer);
+  const dealer=new THREE.Group();dealer.position.set(DEALER_X,DEALER_Y,DEALER_Z);dealer.rotation.y=DEALER_YAW;scene.add(dealer);
   const body=gltf.scene;dealer.add(body);
-  body.scale.setScalar(0.92);                              // the model is 1.88 m to the top of her hair; this makes her about 1.73 m
+  body.scale.setScalar(DEALER_SCALE);                              // the model is 1.88 m to the top of her hair; this makes her about 1.73 m
   body.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;}});
   // his built-in pose has a casual head tilt; the spine, neck and head stand upright instead (their bind pose)
   const UPRIGHT=['Hips','Spine','Spine1','Spine2','Neck','Head'].map(n=>body.getObjectByName(n)).filter(Boolean).map(b=>[b,b.quaternion.clone()]);
   const standUp=()=>{for(const[b,q]of UPRIGHT)b.quaternion.copy(q);};
   const mixer=new THREE.AnimationMixer(body);
   if(gltf.animations[0])mixer.clipAction(gltf.animations[0]).play();   // his relaxed standing pose
-  mixer.update(0);standUp();body.updateMatrixWorld(true);
+  mixer.update(0);standUp();
+  // she sits, as the reference video's dealer does: thighs forward, shins down, feet on the chair's footrest
+  for(const P of['Left','Right']){const up=body.getObjectByName(P+'UpLeg'),lg=body.getObjectByName(P+'Leg'),ft=body.getObjectByName(P+'Foot');
+    if(up)up.rotation.x-=1.45;if(lg)lg.rotation.x+=1.30;if(ft)ft.rotation.x+=0.15;}
+  body.updateMatrixWorld(true);
   // Snapshot that pose. Every frame starts again from it, so the arm IK never builds on the previous frame's result
   // (the built-in clip is a single frame and does not reset the bones by itself).
   const POSE=[];body.traverse(o=>{if(o.isBone)POSE.push([o,o.quaternion.clone(),o.position.clone()]);});
@@ -2093,12 +2106,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // so the wrist turns smoothly instead of whipping round when the hand changes direction
     const S0=wp(a.u);
     const hd=new THREE.Vector3(a.pos.x-S0.x,0,a.pos.z-S0.z);
-    if(hd.lengthSq()<1e-4)hd.set(0,0,1);hd.normalize();hd.lerp(new THREE.Vector3(0,0,1),0.35).normalize();hd.y=-0.36-2.3*a.down;hd.normalize();   // pointing: the hand tips down so the index finger points at the cards
+    const fwd=new THREE.Vector3(Math.sin(DEALER_YAW),0,Math.cos(DEALER_YAW));if(hd.lengthSq()<1e-4)hd.copy(fwd);hd.normalize();hd.lerp(fwd,0.35).normalize();hd.y=-0.36-2.3*a.down;hd.normalize();   // pointing: the hand tips down so the index finger points at the cards
     const W=a.pos.clone().addScaledVector(hd,-a.HL).add(new THREE.Vector3(0,0.015,0));const dirSW=W.clone().sub(S0);let d=dirSW.length();dirSW.normalize();
     const reach=(a.L1+a.L2)*0.995;if(d>reach){W.copy(S0).addScaledVector(dirSW,reach);d=reach;}
     d=Math.max(d,Math.abs(a.L1-a.L2)+0.02);
     const ax=(a.L1*a.L1-a.L2*a.L2+d*d)/(2*d),h=Math.sqrt(Math.max(0,a.L1*a.L1-ax*ax));
-    const pole=new THREE.Vector3(a.side*0.9,-1,-0.35).normalize();pole.addScaledVector(dirSW,-pole.dot(dirSW)).normalize();
+    const pole=new THREE.Vector3(a.side*0.9,-1,-0.35).applyAxisAngle(UP,DEALER_YAW).normalize();   // elbows out and down, in her own framepole.addScaledVector(dirSW,-pole.dot(dirSW)).normalize();
     const E=S0.clone().addScaledVector(dirSW,ax).addScaledVector(pole,h);
     aimBone(a.u,a.f,E.clone().sub(S0));
     aimBone(a.f,a.h,W.clone().sub(wp(a.f)));
@@ -2139,7 +2152,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     for(const a of[arm.L,arm.R]){_ld.set(a.target.x-a.shoulder0.x,0,a.target.z-a.shoulder0.z);   // leans for where the hand is heading
       const need=Math.max(0,_ld.length()-(a.L1+a.L2+a.HL)*0.62);if(need<=0)continue;
       _lw.addScaledVector(_ld.normalize(),Math.min(0.95,need*2.3));   // as in the video: she leans well forward for the far reaches (your cards, your bet)
-      const w=need;yaw+=Math.atan2(a.target.x,a.target.z-DEALER_Z)*Math.min(1,need/0.15)*w;wsum+=w;}
+      const w=need;yaw+=(Math.atan2(a.target.x-DEALER_X,a.target.z-DEALER_Z)-DEALER_YAW)*Math.min(1,need/0.15)*w;wsum+=w;}
     if(_lw.length()>1)_lw.normalize();
     yaw=wsum>0?yaw/wsum:0;
     const k=1-Math.exp(-dt*3);
@@ -2180,7 +2193,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       const v=gazeVel.length(),vmax=1.2;if(v>vmax)gazeVel.multiplyScalar(vmax/v);gaze.addScaledVector(gazeVel,h);}
   }
   function turnHead(target,dt,now){
-    _g.copy(target||_a.set(0,1.45,DEALER_Z+1.5));stepGaze(_g,dt);
+    _g.copy(target||_a.set(DEALER_X+Math.sin(DEALER_YAW)*1.5,1.4,DEALER_Z+Math.cos(DEALER_YAW)*1.5));stepGaze(_g,dt);
     chestB.getWorldQuaternion(_qb);setWorldQ(chestB,_qb.premultiply(_qa.setFromAxisAngle(new THREE.Vector3(1,0,0),Math.sin(now/1300)*0.012)));   // breathing
     let nod=0;if(nodT>=0){const t=(now-nodT)/1000;if(t>1.2)nodT=-1;else nod=Math.sin(Math.PI*Math.min(1,t/1.2))*0.25;}
     const hp=wp(headB,new THREE.Vector3()),want=gaze.clone().sub(hp).normalize();want.y-=nod;want.normalize();
@@ -2322,7 +2335,12 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     });
   }
   function sync(){
-    const want=layout(),seen=new Set();
+    const want=layout(),seen=new Set(want.map(w=>keyOf(w.card)));
+    // cards no longer in play are cleared first, so a new hand is never dealt on top of the last one
+    { const gone={p:[],d:[]};
+      for(const[k,m]of meshes){if(seen.has(k)||m.userData.leaving)continue;
+        m.userData.leaving=true;if(m.userData.placed)gone[m.userData.dealer?'d':'p'].push(m);}
+      if(gone.p.length||gone.d.length)queueCollect([...gone.p,...gone.d]); }
     for(const w of want){
       const k=keyOf(w.card);let m=meshes.get(k);seen.add(k);
       if(!m){
@@ -2338,10 +2356,6 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
         tween(320,k=>{m.position.lerpVectors(from,to,k);m.rotation.y=y0+(y1-y0)*k;});
       }
     }
-    const gone={p:[],d:[]};
-    for(const[k,m]of meshes){if(seen.has(k)||m.userData.leaving)continue;
-      m.userData.leaving=true;if(m.userData.placed)gone[m.userData.dealer?'d':'p'].push(m);}   // not yet dealt: her queue drops or sweeps it
-    if(gone.p.length||gone.d.length)queueCollect([...gone.p,...gone.d]);
     syncChips();
   }
 
@@ -2403,7 +2417,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
   function syncLabels(){
     const used=new Set(),hv=g('handValue');if(!hv)return;
     const dc=(S.dealer&&S.dealer.cards)||[];
-    const placed=dc.length&&!pending.reveal&&dc.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed;});
+    const placed=dc.length&&!pending.reveal&&dc.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed&&!m.userData.leaving;});
     if(placed){const vis=S.dealer.hole?dc.slice(0,1):dc,v=hv(vis);
       const dOut=!S.dealer.hole&&v.total>21?'<span class="out o-bust">BUST</span>':'';
       // as in the video: the total in a bubble beside the dealer's row, a BUST tag above it
@@ -2413,7 +2427,7 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
       if(dOut){placeLabel('do',first.clone().lerp(last,0.5).add(new THREE.Vector3(0,0,-CH*0.62)),dOut);used.add('do');}}
     const dealerDone=!pending.deal&&!pending.reveal&&dc.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed&&m.userData.faceUp===!(c===dc[1]&&S.dealer.hole);});   // results only once her cards are down
     (S.hands||[]).forEach((h,i,hs)=>{
-      const ok=h.cards.length&&h.cards.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed;});
+      const ok=h.cards.length&&h.cards.every(c=>{const m=meshes.get(c.__w3d);return m&&m.userData.placed&&!m.userData.leaving;});
       if(!ok)return;const v=hv(h.cards),sp=chipSpot(i,hs.length);
       const act=S.phase==='player'&&i===S.active&&hs.length>1;
       const o=h.outcome&&OUT[h.outcome]&&(h.outcome==='bust'||dealerDone)?`<span class="out o-${h.outcome}">${OUT[h.outcome]}</span>`:'';
@@ -2573,8 +2587,11 @@ const g=(name)=>{try{return GLOBALS[name]();}catch(e){return undefined;}};   // 
     // as in the video the round clears itself, once the dealer has finished dealing and paying and you've had a moment to see it;
     // Autobet puts the same bet straight back in and deals
     if(pending.deal||pending.clear||pending.chip||pending.reveal)busyAt=now;
-    if(ph==='settle'&&now-settleAt>3500&&now-busyAt>2200){settleAt=Infinity;
-      if(S.autoBet&&last>=min&&last<=S.bankroll)call('dealSameBet');else{call('nextRound');S.bet=0;call('render');}}
+    if(ph==='settle'&&now-settleAt>2600&&now-busyAt>1000){settleAt=Infinity;
+      const cards=[...meshes.values()].filter(m=>m.userData.placed&&!m.userData.leaving);
+      cards.forEach(m=>{m.userData.leaving=true;});if(cards.length)queueCollect(cards);
+      dq.then(()=>{if(S.phase!=='settle')return;
+        if(S.autoBet&&S.lastBet>=min&&S.lastBet<=S.bankroll)call('dealSameBet');else{call('nextRound');S.bet=0;call('render');}});}
   }
   /* ---------- the screen furniture, laid out as in the reference video ----------
      a dark header with the title, a blue balance pill, a table panel on the right, rings on the empty seats,

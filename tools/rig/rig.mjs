@@ -15,6 +15,10 @@ const J=[];const jIndex={};
 const joint=(name,pos,parent)=>{jIndex[name]=J.length;J.push({name,pos,parent});};
 joint('Hips',[0,0.98,-0.02],null);joint('Spine',[0,1.08,-0.025],'Hips');joint('Spine1',[0,1.20,-0.03],'Spine');joint('Spine2',[0,1.33,-0.03],'Spine1');
 joint('Neck',[0,1.55,-0.035],'Spine2');joint('Head',[0,1.665,-0.02],'Neck');joint('HeadTop_End',[0,1.86,-0.02],'Head');
+// legs, measured from the leg mesh: hip joint at 0.89 m, knee at 0.50 m, ankle at 0.10 m
+for(const[sx,P0]of[[1,'Left'],[-1,'Right']]){
+  joint(P0+'UpLeg',[0.085*sx,0.89,-0.012],'Hips');joint(P0+'Leg',[0.095*sx,0.50,-0.045],P0+'UpLeg');
+  joint(P0+'Foot',[0.092*sx,0.10,-0.05],P0+'Leg');joint(P0+'ToeBase',[0.098*sx,0.02,0.07],P0+'Foot');}
 const FACE={};
 { const centre=name=>{const P=prims.find(p=>p.node.startsWith(name));const c=[0,0,0];for(let i=0;i<P.n;i++)for(let k=0;k<3;k++)c[k]+=P.pos[i*3+k]/P.n;return c;};
   const HV=[];for(let i=0;i<HEADM.n;i++)HV.push(vtx(HEADM,i));
@@ -118,10 +122,15 @@ function faceWeights(v){   // lids and mouth corners take a share of the head's 
 }
 const headWeights=v=>{const m=jw();const f=faceWeights(v),k=1-f.lid-f.mouth;spineW(m,v[1],Math.max(0,k));addW(m,f.P0+'Lid',f.lid);addW(m,'Mouth'+f.P0,f.mouth);return m;};
 const lashWeights=v=>{const m=jw();const P0=v[0]>0?'Left':'Right';const up=sstep(FACE[P0].eye[1]-0.002,FACE[P0].eye[1]+0.002,v[1]);addW(m,P0+'Lid',up);addW(m,'Head',1-up);return m;};
-const skirtWeights=v=>{const m=jw();spineW(m,v[1]);return m;};
+const skirtWeights=v=>{const m=jw();if(v[1]>0.97){spineW(m,v[1]);return m;}return legWeights(v);};   // below the hips the skirt follows the thighs
 const rigid=n=>()=>{const m=jw();addW(m,n,1);return m;};
-const SKIRT=P('Stretch_Denim_FCL1PSD003_FRONT_4181');
-const weightFn=p=>p===ARM?armWeights:p===TORSO||p===SHIRT?torsoWeights:p===HEADM?headWeights:p===SKIRT?skirtWeights:
+const SKIRT=P('Stretch_Denim_FCL1PSD003_FRONT_4181'),LEGS=P('Material13466');
+function legChain(m,v,P0,k){                 // hips -> thigh -> shin -> foot, blended at the joints
+  const y=v[1],hip=1-sstep(0.84,0.97,y),knee=sstep(0.46,0.54,y),ank=sstep(0.07,0.13,y);
+  addW(m,'Hips',k*(1-hip));addW(m,P0+'UpLeg',k*hip*knee);addW(m,P0+'Leg',k*hip*(1-knee)*ank);addW(m,P0+'Foot',k*hip*(1-knee)*(1-ank));}
+function legWeights(v){const m=jw(),l=sstep(-0.025,0.025,v[0]);if(l>0)legChain(m,v,'Left',l);if(l<1)legChain(m,v,'Right',1-l);return m;}
+const shoeWeights=v=>{const m=jw();addW(m,(v[0]>0?'Left':'Right')+'Foot',1);return m;};
+const weightFn=p=>p===ARM?armWeights:p===TORSO||p===SHIRT?torsoWeights:p===HEADM?headWeights:p===SKIRT?skirtWeights:p===LEGS?legWeights:/^shoes/.test(p.node)?shoeWeights:
   /^eye_L/.test(p.node)?rigid('LeftEye'):/^eye_R/.test(p.node)?rigid('RightEye'):/^eyelash/.test(p.node)?lashWeights:
   /hair|eye|tooth/.test(p.node)?rigid('Head'):rigid('Hips');
 
